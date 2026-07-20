@@ -1,0 +1,24 @@
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { ResetPasswordForm } from "@/features/auth/components/reset-password-form";
+
+export default function ResetPasswordPage() {
+  return (
+    <Card className="border-0 shadow-none">
+      <CardHeader className="px-0 pt-0">
+        <CardTitle className="text-2xl">Nouveau mot de passe</CardTitle>
+        <CardDescription>
+          Choisissez un nouveau mot de passe pour votre compte
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="px-0 pb-0">
+        <ResetPasswordForm />
+      </CardContent>
+    </Card>
+  );
+}

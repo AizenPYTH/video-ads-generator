@@ -1,103 +1,99 @@
-import Image from "next/image";
+import Link from "next/link";
+import { ArrowRight, Camera, FileSpreadsheet, Link2, Sparkles } from "lucide-react";
+import { MarketingNav } from "@/components/marketing/nav";
+import { MarketingFooter } from "@/components/marketing/footer";
+import { Hero } from "@/components/marketing/hero";
+import { Pricing } from "@/components/marketing/pricing";
+import { Button } from "@/components/ui/button";
 
-export default function Home() {
+const features = [
+  {
+    icon: Camera,
+    title: "Analyse par photo",
+    description:
+      "Prenez une photo de votre produit et laissez SNOWOLF identifier marque, modèle et caractéristiques.",
+  },
+  {
+    icon: FileSpreadsheet,
+    title: "Import en masse",
+    description:
+      "Importez des centaines d'annonces depuis un fichier CSV ou Excel en quelques minutes.",
+  },
+  {
+    icon: Link2,
+    title: "Import depuis une URL",
+    description:
+      "Copiez le lien d'un produit existant et récupérez automatiquement les informations utiles.",
+  },
+  {
+    icon: Sparkles,
+    title: "Descriptions optimisées",
+    description:
+      "Des titres et descriptions pensés pour eBay France, prêts à publier en un clic.",
+  },
+];
+
+export default function HomePage() {
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    <div className="flex min-h-screen flex-col">
+      <MarketingNav />
+      <main className="flex-1">
+        <Hero />
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
+        <section className="px-6 py-24" id="fonctionnalites">
+          <div className="mx-auto max-w-6xl">
+            <div className="text-center">
+              <h2 className="text-3xl font-bold tracking-tight text-navy-900">
+                Tout pour vendre plus vite sur eBay
+              </h2>
+              <p className="mt-4 text-muted-foreground">
+                De la photo à l&apos;annonce publiée, SNOWOLF vous accompagne à
+                chaque étape.
+              </p>
+            </div>
+
+            <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+              {features.map((feature) => (
+                <div
+                  key={feature.title}
+                  className="rounded-xl border border-border bg-card p-6 shadow-sm"
+                >
+                  <feature.icon className="mb-4 h-8 w-8 text-glacier-300" />
+                  <h3 className="font-semibold text-navy-900">{feature.title}</h3>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {feature.description}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <Pricing />
+
+        <section className="bg-navy-900 px-6 py-20 text-white">
+          <div className="mx-auto max-w-3xl text-center">
+            <h2 className="text-3xl font-bold">
+              Prêt à transformer vos annonces eBay ?
+            </h2>
+            <p className="mt-4 text-white/70">
+              Rejoignez SNOWOLF gratuitement et publiez votre première annonce
+              en moins de 5 minutes.
+            </p>
+            <Button
+              size="lg"
+              asChild
+              className="mt-8 bg-glacier-300 text-navy-900 hover:bg-glacier-300/90"
+            >
+              <Link href="/signup">
+                Commencer gratuitement
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
+        </section>
       </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      <MarketingFooter />
     </div>
   );
 }
