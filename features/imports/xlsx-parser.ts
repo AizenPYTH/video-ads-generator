@@ -3,9 +3,9 @@ import {
   isDangerousFormula,
   MAX_CELL_LENGTH,
   MAX_CSV_ROWS,
-  REQUIRED_COLUMNS,
   type CsvRow,
 } from "./csv-parser";
+import { mapHeader, normalizeHeader } from "./columns";
 
 export type XlsxParseResult = {
   rows: CsvRow[];
@@ -21,32 +21,48 @@ function sanitizeCell(value: unknown): string {
   }
 
   if (isDangerousFormula(str)) {
-    throw new Error(`Formule potentiellement dangereuse détectée : ${str.slice(0, 20)}`);
+    throw new Error(
+      `Formule potentiellement dangereuse détectée : ${str.slice(0, 20)}`,
+    );
   }
 
   return str;
 }
 
+function pickSheetName(names: string[]): string | null {
+  const preferred = names.find(
+    (n) => n.trim().toLowerCase() === "annonces" || n.trim().toLowerCase() === "import ebay",
+  );
+  return preferred ?? names[0] ?? null;
+}
+
 export function parseXlsx(buffer: ArrayBuffer): XlsxParseResult {
   const errors: string[] = [];
 
-  const workbook = XLSX.read(buffer, { type: "array", cellFormula: false });
-
-  const hasMacros = workbook.SheetNames.some((name) => {
-    const sheet = workbook.Sheets[name];
-    return (sheet?.["!type"] as string | undefined) === "macro";
+  const workbook = XLSX.read(buffer, {
+    type: "array",
+    cellFormula: false,
+    raw: false,
   });
 
-  if (hasMacros) {
-    errors.push("Les fichiers avec macros (XLSM) ne sont pas acceptés.");
+  if (workbook.Workbook?.Names?.some((n) => /macro/i.test(n.Name ?? ""))) {
+    errors.push("Les fichiers avec macros ne sont pas acceptés.");
   }
 
-  const sheetName = workbook.SheetNames[0];
+  const sheetName = pickSheetName(workbook.SheetNames);
   if (!sheetName) {
     return { rows: [], headers: [], errors: ["Fichier XLSX vide."] };
   }
 
   const sheet = workbook.Sheets[sheetName];
+  const headerMatrix = XLSX.utils.sheet_to_json<(string | number | undefined)[]>(
+    sheet,
+    { header: 1, defval: "", raw: false },
+  );
+  const headers = ((headerMatrix[0] ?? []) as unknown[])
+    .map((h) => String(h ?? "").trim())
+    .filter(Boolean);
+
   const rawData = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
     defval: "",
     raw: false,
@@ -56,14 +72,14 @@ export function parseXlsx(buffer: ArrayBuffer): XlsxParseResult {
     errors.push(`Trop de lignes (max ${MAX_CSV_ROWS}).`);
   }
 
-  const headers = rawData.length > 0
-    ? Object.keys(rawData[0]).map((h) => h.trim().toLowerCase())
-    : [];
-
-  for (const col of REQUIRED_COLUMNS) {
-    if (!headers.includes(col)) {
-      errors.push(`Colonne obligatoire manquante : ${col}`);
-    }
+  const mappedHeaders = new Set(
+    headers.map((h) => mapHeader(h)).filter(Boolean),
+  );
+  if (!mappedHeaders.has("titre")) {
+    errors.push("Colonne obligatoire manquante : Title");
+  }
+  if (!mappedHeaders.has("prix_vente")) {
+    errors.push("Colonne obligatoire manquante : Start price");
   }
 
   const rows: CsvRow[] = [];
@@ -74,8 +90,13 @@ export function parseXlsx(buffer: ArrayBuffer): XlsxParseResult {
 
     try {
       for (const [key, value] of Object.entries(rawRow)) {
-        row[key.trim().toLowerCase()] = sanitizeCell(value);
+        const mapped =
+          mapHeader(key) ?? normalizeHeader(key).replace(/\s+/g, "_");
+        if (!row[mapped] || !String(row[mapped]).trim()) {
+          row[mapped] = sanitizeCell(value);
+        }
       }
+      if (!Object.values(row).some((v) => v.trim())) continue;
       rows.push(row);
     } catch (err) {
       errors.push(

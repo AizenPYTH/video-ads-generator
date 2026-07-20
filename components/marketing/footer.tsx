@@ -1,66 +1,54 @@
+import { BrandLogo } from "@/components/brand/logo";
 import Link from "next/link";
-import { Snowflake } from "lucide-react";
+import { APP_NAME } from "@/lib/brand";
 
 export function MarketingFooter() {
   return (
-    <footer className="border-t border-border bg-navy-900 px-6 py-12 text-white">
+    <footer className="border-t border-border/70 bg-primary px-4 py-12 text-primary-foreground sm:px-6">
       <div className="mx-auto max-w-6xl">
-        <div className="flex flex-col items-start justify-between gap-8 sm:flex-row">
+        <div className="flex flex-col items-start justify-between gap-10 sm:flex-row">
           <div>
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-glacier-300 text-navy-900">
-                <Snowflake className="h-4 w-4" />
-              </div>
-              <span className="text-lg font-bold">SNOWOLF</span>
+            <div className="inline-flex rounded-lg bg-white px-2 py-1.5">
+              <BrandLogo href="/" height={32} />
             </div>
-            <p className="mt-3 max-w-xs text-sm text-white/60">
-              La plateforme intelligente pour créer et gérer vos annonces eBay
-              en France.
+            <p className="mt-4 max-w-xs text-sm leading-6 text-primary-foreground/70">
+              Créez, préparez et publiez vos annonces eBay depuis un espace
+              unique.
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-8 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-x-12 gap-y-8">
             <div>
-              <h4 className="mb-3 text-sm font-semibold">Produit</h4>
-              <ul className="space-y-2 text-sm text-white/60">
+              <h2 className="mb-3 text-sm font-semibold">Produit</h2>
+              <ul className="space-y-2.5 text-sm text-primary-foreground/70">
                 <li>
-                  <Link href="/#tarifs" className="hover:text-white">
+                  <Link href="/#fonctionnalites" className="rounded-sm hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-glacier-300">
+                    Fonctionnalités
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/#tarifs" className="rounded-sm hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-glacier-300">
                     Tarifs
                   </Link>
                 </li>
                 <li>
-                  <Link href="/signup" className="hover:text-white">
-                    Inscription
+                  <Link href="/signup" className="rounded-sm hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-glacier-300">
+                    Créer un compte
                   </Link>
                 </li>
               </ul>
             </div>
             <div>
-              <h4 className="mb-3 text-sm font-semibold">Compte</h4>
-              <ul className="space-y-2 text-sm text-white/60">
+              <h2 className="mb-3 text-sm font-semibold">Informations</h2>
+              <ul className="space-y-2.5 text-sm text-primary-foreground/70">
                 <li>
-                  <Link href="/login" className="hover:text-white">
+                  <Link href="/login" className="rounded-sm hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-glacier-300">
                     Connexion
                   </Link>
                 </li>
                 <li>
-                  <Link href="/dashboard" className="hover:text-white">
-                    Tableau de bord
-                  </Link>
-                </li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="mb-3 text-sm font-semibold">Légal</h4>
-              <ul className="space-y-2 text-sm text-white/60">
-                <li>
-                  <Link href="/privacy" className="hover:text-white">
+                  <Link href="/privacy" className="rounded-sm hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-glacier-300">
                     Confidentialité
-                  </Link>
-                </li>
-                <li>
-                  <Link href="#" className="hover:text-white">
-                    CGU
                   </Link>
                 </li>
               </ul>
@@ -68,8 +56,8 @@ export function MarketingFooter() {
           </div>
         </div>
 
-        <div className="mt-12 border-t border-white/10 pt-8 text-center text-sm text-white/40">
-          © {new Date().getFullYear()} SNOWOLF. Tous droits réservés.
+        <div className="mt-12 border-t border-primary-foreground/15 pt-8 text-sm text-primary-foreground/60">
+          © {new Date().getFullYear()} {APP_NAME}. Tous droits réservés.
         </div>
       </div>
     </footer>

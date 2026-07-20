@@ -10,10 +10,10 @@ import { ForgotPasswordForm } from "@/features/auth/components/forgot-password-f
 export default function ForgotPasswordPage() {
   return (
     <Card className="border-0 shadow-none">
-      <CardHeader className="px-0 pt-0">
-        <CardTitle className="text-2xl">Mot de passe oublié</CardTitle>
+      <CardHeader className="px-0 pt-0 text-center">
+        <CardTitle className="text-2xl tracking-tight">Retrouvez votre accès</CardTitle>
         <CardDescription>
-          Entrez votre email pour recevoir un lien de réinitialisation
+          Nous vous enverrons un lien de réinitialisation par email.
         </CardDescription>
       </CardHeader>
       <CardContent className="px-0 pb-0">

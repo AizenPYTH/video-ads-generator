@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   extractReferences,
   getBestReference,
+  joinNearbyOcrLines,
 } from "@/services/google-vision/reference-parser";
 
 describe("reference-parser", () => {
@@ -66,5 +67,21 @@ describe("reference-parser", () => {
 
   it("returns null from getBestReference when no candidates", () => {
     expect(getBestReference("no references here")).toBeNull();
+  });
+
+  it("joins multi-line PCB references", () => {
+    const joined = joinNearbyOcrLines("820-\n01779-A");
+    expect(joined).toMatch(/820-01779-A/);
+    const best = getBestReference("820-\n01779-A");
+    expect(best?.normalized).toMatch(/820-01779/);
+  });
+
+  it("accepts space/dot separators in PCB refs", () => {
+    const refs = extractReferences("PN: 820.01779.A");
+    expect(
+      refs.some(
+        (r) => r.normalized.includes("820") && r.normalized.includes("01779"),
+      ),
+    ).toBe(true);
   });
 });

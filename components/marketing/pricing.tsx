@@ -17,7 +17,7 @@ const plans = [
     name: "Gratuit",
     price: "0 €",
     period: "/mois",
-    description: "Pour découvrir SNOWOLF",
+    description: "Pour découvrir Smart Seller",
     features: [
       "10 analyses par mois",
       "3 publications par mois",
@@ -80,44 +80,48 @@ const plans = [
 
 export function Pricing() {
   return (
-    <section className="bg-muted/30 px-6 py-24" id="tarifs">
+    <section className="border-t border-border/70 bg-background px-4 py-20 sm:px-6 sm:py-24" id="tarifs">
       <div className="mx-auto max-w-6xl">
-        <div className="text-center">
-          <h2 className="text-3xl font-bold tracking-tight text-navy-900">
-            Tarifs simples et transparents
+        <div className="mx-auto max-w-2xl text-center">
+          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-navy-700">
+            Tarifs
+          </p>
+          <h2 className="mt-3 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+            Une formule adaptée à votre rythme
           </h2>
-          <p className="mt-4 text-muted-foreground">
-            Choisissez le plan adapté à votre activité eBay
+          <p className="mt-4 leading-7 text-muted-foreground">
+            Commencez gratuitement, puis choisissez le volume qui correspond à
+            votre activité.
           </p>
         </div>
 
-        <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {plans.map((plan) => (
             <Card
               key={plan.name}
               className={cn(
-                "relative flex flex-col",
-                plan.highlighted && "border-glacier-300 shadow-lg ring-2 ring-glacier-300"
+                "relative flex flex-col border-border/80 shadow-sm",
+                plan.highlighted && "border-primary/60 shadow-md ring-1 ring-primary/20"
               )}
             >
               {plan.highlighted && (
-                <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-glacier-300 text-navy-900">
-                  Populaire
+                <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap bg-primary text-primary-foreground">
+                  Formule Pro
                 </Badge>
               )}
-              <CardHeader>
+              <CardHeader className="pb-4">
                 <CardTitle>{plan.name}</CardTitle>
                 <CardDescription>{plan.description}</CardDescription>
                 <div className="mt-4">
-                  <span className="text-3xl font-bold">{plan.price}</span>
-                  <span className="text-muted-foreground">{plan.period}</span>
+                  <span className="text-3xl font-bold tracking-tight">{plan.price}</span>
+                  <span className="text-sm text-muted-foreground">{plan.period}</span>
                 </div>
               </CardHeader>
               <CardContent className="flex-1">
                 <ul className="space-y-3">
                   {plan.features.map((feature) => (
-                    <li key={feature} className="flex items-start gap-2 text-sm">
-                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-glacier-300" />
+                    <li key={feature} className="flex items-start gap-2.5 text-sm leading-5">
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-navy-700" aria-hidden="true" />
                       {feature}
                     </li>
                   ))}
@@ -129,7 +133,9 @@ export function Pricing() {
                   variant={plan.highlighted ? "default" : "outline"}
                   asChild
                 >
-                  <Link href={plan.href}>{plan.cta}</Link>
+                  <Link href={plan.href} aria-label={`${plan.cta}, formule ${plan.name}`}>
+                    {plan.cta}
+                  </Link>
                 </Button>
               </CardFooter>
             </Card>

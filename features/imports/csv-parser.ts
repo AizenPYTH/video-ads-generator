@@ -1,23 +1,16 @@
 import Papa from "papaparse";
+import { detectAndDecodeCsv } from "./encoding";
+import {
+  mapHeader,
+  REQUIRED_EBAY_COLUMNS,
+  normalizeHeader,
+} from "./columns";
 
 export const MAX_CSV_ROWS = 10_000;
 export const MAX_CELL_LENGTH = 5_000;
 
-export const REQUIRED_COLUMNS = [
-  "titre",
-  "prix_vente",
-] as const;
-
-export const OPTIONAL_COLUMNS = [
-  "description",
-  "prix_achat",
-  "quantite",
-  "sku",
-  "ebay_category_id",
-  "ebay_condition_id",
-  "notes",
-  "item_specifics",
-] as const;
+/** @deprecated use REQUIRED_EBAY_COLUMNS — kept for test compatibility aliases */
+export const REQUIRED_COLUMNS = ["titre", "prix_vente"] as const;
 
 export type CsvRow = Record<string, string>;
 
@@ -25,6 +18,8 @@ export type CsvParseResult = {
   rows: CsvRow[];
   headers: string[];
   errors: string[];
+  encoding?: string;
+  delimiter?: string;
 };
 
 const FORMULA_PATTERN = /^[=+\-@]/;
@@ -59,19 +54,48 @@ function sanitizeCell(value: unknown): string {
   }
 
   if (isDangerousFormula(str)) {
-    throw new Error(`Formule potentiellement dangereuse détectée : ${str.slice(0, 20)}`);
+    throw new Error(
+      `Formule potentiellement dangereuse détectée : ${str.slice(0, 20)}`,
+    );
   }
 
   return str;
 }
 
-export function parseCsv(content: string): CsvParseResult {
-  const errors: string[] = [];
+function mapRowKeys(raw: Record<string, string>): CsvRow {
+  const row: CsvRow = {};
+  for (const [header, value] of Object.entries(raw)) {
+    const mapped = mapHeader(header) ?? normalizeHeader(header).replace(/\s+/g, "_");
+    // Prefer first non-empty if duplicate mapped keys
+    if (!row[mapped] || !String(row[mapped]).trim()) {
+      row[mapped] = sanitizeCell(value);
+    }
+  }
+  return row;
+}
 
-  const parsed = Papa.parse<Record<string, string>>(content, {
+function hasRequiredMappedColumns(headers: string[]): string[] {
+  const mapped = new Set(
+    headers.map((h) => mapHeader(h)).filter(Boolean) as string[],
+  );
+  const missing: string[] = [];
+  // Title / Start price via aliases
+  if (!mapped.has("titre")) missing.push("Title");
+  if (!mapped.has("prix_vente")) missing.push("Start price");
+  return missing;
+}
+
+export function parseCsv(
+  content: string | ArrayBuffer | Buffer,
+): CsvParseResult {
+  const errors: string[] = [];
+  const { text, encoding, delimiter } = detectAndDecodeCsv(content);
+
+  const parsed = Papa.parse<Record<string, string>>(text, {
     header: true,
-    skipEmptyLines: true,
-    transformHeader: (header) => header.trim().toLowerCase(),
+    skipEmptyLines: "greedy",
+    delimiter,
+    transformHeader: (header) => header.trim(),
   });
 
   if (parsed.errors.length > 0) {
@@ -81,12 +105,13 @@ export function parseCsv(content: string): CsvParseResult {
   }
 
   const headers = parsed.meta.fields ?? [];
-
-  for (const col of REQUIRED_COLUMNS) {
-    if (!headers.includes(col)) {
-      errors.push(`Colonne obligatoire manquante : ${col}`);
-    }
+  const missing = hasRequiredMappedColumns(headers);
+  for (const col of missing) {
+    errors.push(`Colonne obligatoire manquante : ${col}`);
   }
+
+  // Category ID never required
+  void REQUIRED_EBAY_COLUMNS;
 
   if (parsed.data.length > MAX_CSV_ROWS) {
     errors.push(`Trop de lignes (max ${MAX_CSV_ROWS}).`);
@@ -96,12 +121,10 @@ export function parseCsv(content: string): CsvParseResult {
 
   for (let i = 0; i < parsed.data.length; i++) {
     const rawRow = parsed.data[i];
-    const row: CsvRow = {};
-
     try {
-      for (const [key, value] of Object.entries(rawRow)) {
-        row[key] = sanitizeCell(value);
-      }
+      const row = mapRowKeys(rawRow);
+      // Skip completely empty rows
+      if (!Object.values(row).some((v) => v.trim())) continue;
       rows.push(row);
     } catch (err) {
       errors.push(
@@ -110,5 +133,5 @@ export function parseCsv(content: string): CsvParseResult {
     }
   }
 
-  return { rows, headers, errors };
+  return { rows, headers, errors, encoding, delimiter };
 }

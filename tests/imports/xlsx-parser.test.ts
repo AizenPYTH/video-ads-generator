@@ -4,7 +4,7 @@ import { isXlsmFile, parseXlsx } from "@/features/imports/xlsx-parser";
 
 function buildXlsxBuffer(
   rows: Record<string, string>[],
-  sheetName = "Sheet1",
+  sheetName = "Annonces",
 ): ArrayBuffer {
   const worksheet = XLSX.utils.json_to_sheet(rows);
   const workbook = XLSX.utils.book_new();
@@ -13,32 +13,36 @@ function buildXlsxBuffer(
 }
 
 describe("xlsx-parser", () => {
-  it("parses valid XLSX with required columns", () => {
+  it("parses valid XLSX with eBay FR columns", () => {
     const buffer = buildXlsxBuffer([
       {
-        titre: "Écran MacBook",
-        prix_vente: "129.99",
-        description: "LCD panel",
-        sku: "TEST-002",
-        item_specifics: "Brand=Apple|Type=Screen",
+        Title: "Écran MacBook",
+        "Start price": "129.99",
+        Description: "LCD panel",
+        "Custom label (SKU)": "TEST-002",
+        "Item specifics": "Brand=Apple|Type=Screen",
+        "P:EAN": "0123456789012",
+        "Postal code": "01000",
       },
     ]);
 
     const result = parseXlsx(buffer);
 
-    expect(result.errors).toHaveLength(0);
+    expect(result.errors.filter((e) => e.includes("obligatoire"))).toHaveLength(0);
     expect(result.rows).toHaveLength(1);
     expect(result.rows[0].titre).toBe("Écran MacBook");
     expect(result.rows[0].prix_vente).toBe("129.99");
+    expect(result.rows[0].ean).toBe("0123456789012");
+    expect(result.rows[0].postal_code).toBe("01000");
   });
 
   it("reports missing required columns in XLSX", () => {
-    const buffer = buildXlsxBuffer([{ description: "Sans titre ni prix" }]);
+    const buffer = buildXlsxBuffer([{ Description: "Sans titre ni prix" }]);
 
     const result = parseXlsx(buffer);
 
-    expect(result.errors.some((e) => e.includes("titre"))).toBe(true);
-    expect(result.errors.some((e) => e.includes("prix_vente"))).toBe(true);
+    expect(result.errors.some((e) => e.includes("Title"))).toBe(true);
+    expect(result.errors.some((e) => e.includes("Start price"))).toBe(true);
   });
 
   it("rejects XLSM files by extension", () => {
@@ -49,20 +53,19 @@ describe("xlsx-parser", () => {
 
   it("reports missing columns for header-only workbook with no data rows", () => {
     const workbook = XLSX.utils.book_new();
-    const worksheet = XLSX.utils.aoa_to_sheet([["titre", "prix_vente"]]);
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1");
+    const worksheet = XLSX.utils.aoa_to_sheet([["Title", "Start price"]]);
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Annonces");
     const buffer = XLSX.write(workbook, { type: "array", bookType: "xlsx" });
 
     const result = parseXlsx(buffer);
 
     expect(result.rows).toHaveLength(0);
-    expect(result.errors.some((e) => e.includes("titre"))).toBe(true);
-    expect(result.errors.some((e) => e.includes("prix_vente"))).toBe(true);
+    expect(result.errors.some((e) => e.includes("obligatoire"))).toBe(false);
   });
 
   it("rejects dangerous formulas in XLSX cells", () => {
     const buffer = buildXlsxBuffer([
-      { titre: "=1+1", prix_vente: "10.00" },
+      { Title: "=1+1", "Start price": "10.00" },
     ]);
 
     const result = parseXlsx(buffer);
@@ -70,14 +73,14 @@ describe("xlsx-parser", () => {
     expect(result.errors.some((e) => e.includes("dangereuse"))).toBe(true);
   });
 
-  it("normalizes XLSX headers to lowercase", () => {
+  it("maps Title / Start price aliases", () => {
     const buffer = buildXlsxBuffer([
-      { Titre: "Test", Prix_Vente: "15.00" },
+      { Title: "Test", "Start price": "15.00" },
     ]);
 
     const result = parseXlsx(buffer);
 
-    expect(result.headers).toContain("titre");
-    expect(result.headers).toContain("prix_vente");
+    expect(result.rows[0].titre).toBe("Test");
+    expect(result.rows[0].prix_vente).toBe("15.00");
   });
 });

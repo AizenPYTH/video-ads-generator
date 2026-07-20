@@ -13,18 +13,21 @@ export default function VerifyEmailPage() {
   return (
     <Card className="border-0 shadow-none">
       <CardHeader className="px-0 pt-0 text-center">
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-secondary">
-          <Mail className="h-7 w-7 text-navy-700" />
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-glacier-100">
+          <Mail className="h-6 w-6 text-navy-700" aria-hidden="true" />
         </div>
-        <CardTitle className="text-2xl">Vérifiez votre email</CardTitle>
-        <CardDescription>
-          Nous avons envoyé un lien de confirmation à votre adresse email.
-          Cliquez sur le lien pour activer votre compte.
+        <CardTitle className="text-2xl tracking-tight">Consultez votre boîte mail</CardTitle>
+        <CardDescription className="leading-6">
+          Utilisez le lien reçu pour confirmer votre adresse. Pensez à vérifier
+          vos courriers indésirables.
         </CardDescription>
       </CardHeader>
-      <CardContent className="px-0 pb-0">
+      <CardContent className="flex flex-col gap-3 px-0 pb-0">
+        <Button asChild className="w-full">
+          <Link href="/login">Se connecter</Link>
+        </Button>
         <Button variant="outline" asChild className="w-full">
-          <Link href="/login">Retour à la connexion</Link>
+          <Link href="/signup">Utiliser une autre adresse</Link>
         </Button>
       </CardContent>
     </Card>

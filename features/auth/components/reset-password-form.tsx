@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { updatePassword } from "@/features/auth/actions";
@@ -49,17 +49,20 @@ export function ResetPasswordForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" noValidate>
       <div className="space-y-2">
         <Label htmlFor="password">Nouveau mot de passe</Label>
         <Input
           id="password"
           type="password"
           autoComplete="new-password"
+          aria-invalid={Boolean(errors.password)}
           {...register("password")}
         />
         {errors.password && (
-          <p className="text-sm text-destructive">{errors.password.message}</p>
+          <p className="text-xs leading-relaxed text-destructive" role="alert">
+            {errors.password.message}
+          </p>
         )}
       </div>
 
@@ -69,18 +72,24 @@ export function ResetPasswordForm() {
           id="confirmPassword"
           type="password"
           autoComplete="new-password"
+          aria-invalid={Boolean(errors.confirmPassword)}
           {...register("confirmPassword")}
         />
         {errors.confirmPassword && (
-          <p className="text-sm text-destructive">
+          <p className="text-xs leading-relaxed text-destructive" role="alert">
             {errors.confirmPassword.message}
           </p>
         )}
       </div>
 
-      <Button type="submit" className="w-full" disabled={isLoading}>
-        {isLoading ? "Mise à jour..." : "Réinitialiser le mot de passe"}
-      </Button>
+      <LoadingButton
+        type="submit"
+        className="w-full"
+        loading={isLoading}
+        loadingText="Mise à jour en cours"
+      >
+        Enregistrer le mot de passe
+      </LoadingButton>
     </form>
   );
 }

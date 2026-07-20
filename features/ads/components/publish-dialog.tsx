@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
 import {
   Dialog,
   DialogContent,
@@ -69,7 +70,7 @@ export function PublishDialog({
         </DialogHeader>
 
         {validation.errors.length > 0 && (
-          <ul className="space-y-1 text-sm text-destructive">
+          <ul className="space-y-1 text-sm text-destructive" role="alert">
             {validation.errors.map((err) => (
               <li key={err.field}>• {err.message}</li>
             ))}
@@ -88,9 +89,14 @@ export function PublishDialog({
           <Button variant="outline" onClick={() => setOpen(false)}>
             Annuler
           </Button>
-          <Button onClick={handlePublish} disabled={isLoading || !validation.valid}>
-            {isLoading ? "Publication..." : "Confirmer"}
-          </Button>
+          <LoadingButton
+            onClick={handlePublish}
+            loading={isLoading}
+            loadingText="Publication en cours…"
+            disabled={!validation.valid}
+          >
+            Confirmer
+          </LoadingButton>
         </DialogFooter>
       </DialogContent>
     </Dialog>

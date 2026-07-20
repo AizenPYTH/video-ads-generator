@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const metadata = {
-  title: "Modifier l'annonce — SNOWOLF",
+  title: "Modifier l'annonce — Smart Seller",
 };
 
 type PageProps = {
@@ -37,7 +37,7 @@ export default async function ModifierAnnoncePage({ params }: PageProps) {
       </Button>
 
       <div>
-        <h1 className="text-2xl font-bold text-navy-900">Modifier l&apos;annonce</h1>
+        <h1 className="text-2xl font-bold text-foreground">Modifier l&apos;annonce</h1>
         <p className="text-muted-foreground">
           Mettez à jour les informations de votre annonce
         </p>

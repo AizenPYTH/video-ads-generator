@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Keep Turbopack rooted on this app (not parent EBAY/)
+  turbopack: {
+    root: process.cwd(),
+  },
   images: {
     remotePatterns: [
       {

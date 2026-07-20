@@ -25,7 +25,8 @@ export function validateAdForPublish(ad: Ad): AdValidationResult {
   if (!isPublishableStatus(ad.statut)) {
     errors.push({
       field: "statut",
-      message: `L'annonce doit être au statut « Prêt » pour être publiée (actuel : ${ad.statut}).`,
+      message:
+        "L'annonce doit être « Prêt » pour être publiée. Complétez les champs manquants.",
     });
   }
 

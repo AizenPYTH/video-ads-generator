@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { MarketingNav } from "@/components/marketing/nav";
 import { MarketingFooter } from "@/components/marketing/footer";
+import { APP_NAME } from "@/lib/brand";
 
 export const metadata = {
-  title: "Politique de confidentialité — SNOWOLF",
-  description: "Politique de confidentialité de SNOWOLF, requise pour la connexion eBay.",
+  title: `Politique de confidentialité — ${APP_NAME}`,
+  description: `Politique de confidentialité de ${APP_NAME}, requise pour la connexion eBay.`,
 };
 
 export default function PrivacyPage() {
@@ -18,7 +19,7 @@ export default function PrivacyPage() {
 
           <h2>1. Qui sommes-nous ?</h2>
           <p>
-            SNOWOLF est une plateforme française qui aide les vendeurs eBay à
+            {APP_NAME} est une plateforme française qui aide les vendeurs eBay à
             créer, optimiser et publier leurs annonces. En utilisant nos
             services, vous acceptez la présente politique de confidentialité.
           </p>
@@ -48,8 +49,8 @@ export default function PrivacyPage() {
             Lorsque vous connectez votre compte eBay, nous accédons à votre
             compte vendeur via le protocole OAuth 2.0 d&apos;eBay. Les autorisations
             demandées permettent de gérer votre inventaire et vos annonces en
-            votre nom. Vous pouvez révoquer cet accès à tout moment depuis
-            SNOWOLF ou depuis les paramètres de votre compte eBay.
+            votre nom. Vous pouvez révoquer cet accès à tout moment depuis{" "}
+            {APP_NAME} ou depuis les paramètres de votre compte eBay.
           </p>
 
           <h2>5. Partage des données</h2>
@@ -73,7 +74,7 @@ export default function PrivacyPage() {
             vous disposez d&apos;un droit d&apos;accès, de rectification, de
             suppression, de portabilité et d&apos;opposition. Pour exercer ces
             droits, contactez-nous à{" "}
-            <a href="mailto:privacy@snowolf.fr">privacy@snowolf.fr</a>.
+            <a href="mailto:privacy@smartseller.app">privacy@smartseller.app</a>.
           </p>
 
           <h2>8. Cookies</h2>
@@ -85,7 +86,7 @@ export default function PrivacyPage() {
           <h2>9. Contact</h2>
           <p>
             Pour toute question relative à cette politique :{" "}
-            <a href="mailto:privacy@snowolf.fr">privacy@snowolf.fr</a>
+            <a href="mailto:privacy@smartseller.app">privacy@smartseller.app</a>
           </p>
 
           <p>

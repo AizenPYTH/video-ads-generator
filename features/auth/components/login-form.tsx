@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { signIn } from "@/features/auth/actions";
@@ -19,6 +20,7 @@ const loginSchema = z.object({
 type LoginFormValues = z.infer<typeof loginSchema>;
 
 export function LoginForm() {
+  const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const {
     register,
@@ -30,20 +32,29 @@ export function LoginForm() {
 
   async function onSubmit(data: LoginFormValues) {
     setIsLoading(true);
-    const formData = new FormData();
-    formData.append("email", data.email);
-    formData.append("password", data.password);
+    try {
+      const formData = new FormData();
+      formData.append("email", data.email);
+      formData.append("password", data.password);
 
-    const result = await signIn(formData);
+      const result = await signIn(formData);
 
-    if (result?.error) {
-      toast.error(result.error);
+      if (result?.error) {
+        toast.error(result.error);
+        setIsLoading(false);
+        return;
+      }
+
+      router.push(result?.redirectTo || "/dashboard");
+      router.refresh();
+    } catch {
+      toast.error("La connexion a échoué. Veuillez réessayer.");
       setIsLoading(false);
     }
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" noValidate>
       <div className="space-y-2">
         <Label htmlFor="email">Email</Label>
         <Input
@@ -51,10 +62,13 @@ export function LoginForm() {
           type="email"
           placeholder="vous@exemple.fr"
           autoComplete="email"
+          aria-invalid={Boolean(errors.email)}
           {...register("email")}
         />
         {errors.email && (
-          <p className="text-sm text-destructive">{errors.email.message}</p>
+          <p className="text-xs leading-relaxed text-destructive" role="alert">
+            {errors.email.message}
+          </p>
         )}
       </div>
 
@@ -63,7 +77,7 @@ export function LoginForm() {
           <Label htmlFor="password">Mot de passe</Label>
           <Link
             href="/forgot-password"
-            className="text-sm text-primary hover:underline"
+            className="rounded-sm text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             Mot de passe oublié ?
           </Link>
@@ -72,20 +86,28 @@ export function LoginForm() {
           id="password"
           type="password"
           autoComplete="current-password"
+          aria-invalid={Boolean(errors.password)}
           {...register("password")}
         />
         {errors.password && (
-          <p className="text-sm text-destructive">{errors.password.message}</p>
+          <p className="text-xs leading-relaxed text-destructive" role="alert">
+            {errors.password.message}
+          </p>
         )}
       </div>
 
-      <Button type="submit" className="w-full" disabled={isLoading}>
-        {isLoading ? "Connexion..." : "Se connecter"}
-      </Button>
+      <LoadingButton
+        type="submit"
+        className="w-full"
+        loading={isLoading}
+        loadingText="Connexion en cours"
+      >
+        Se connecter
+      </LoadingButton>
 
       <p className="text-center text-sm text-muted-foreground">
         Pas encore de compte ?{" "}
-        <Link href="/signup" className="text-primary hover:underline">
+        <Link href="/signup" className="rounded-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           Créer un compte
         </Link>
       </p>

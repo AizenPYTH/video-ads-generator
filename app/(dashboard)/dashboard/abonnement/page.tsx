@@ -2,13 +2,13 @@ import { Suspense } from "react";
 import { getSubscriptionInfo } from "@/features/billing/actions";
 import { SubscriptionCard } from "@/features/billing/components/subscription-card";
 import { UsageMeters } from "@/features/billing/components/usage-meter";
-import { Pricing } from "@/components/marketing/pricing";
+import { PageHeader } from "@/components/layout/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { createClient } from "@/lib/supabase/server";
 import { PLANS, PlanId } from "@/lib/billing/plans";
 
 export const metadata = {
-  title: "Abonnement — SNOWOLF",
+  title: "Abonnement — Smart Seller",
 };
 
 async function SubscriptionContent() {
@@ -61,10 +61,17 @@ async function SubscriptionContent() {
         statut={sub.statut}
         periodeFin={sub.periode_fin}
       />
-      <div>
-        <h2 className="mb-4 text-lg font-semibold">Utilisation ce mois-ci</h2>
+      <section aria-labelledby="utilisation-title">
+        <div className="mb-4">
+          <h2 id="utilisation-title" className="text-lg font-semibold">
+            Utilisation ce mois-ci
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Les compteurs sont remis à zéro au début de chaque mois.
+          </p>
+        </div>
         <UsageMeters quotas={quotas} />
-      </div>
+      </section>
     </div>
   );
 }
@@ -72,21 +79,31 @@ async function SubscriptionContent() {
 export default function AbonnementPage() {
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-navy-900">Abonnement</h1>
-        <p className="text-muted-foreground">
-          Gérez votre formule et consultez votre utilisation
-        </p>
-      </div>
+      <PageHeader
+        title="Abonnement"
+        description="Consultez votre formule, votre utilisation et les options disponibles."
+      />
 
-      <Suspense fallback={<Skeleton className="h-48 rounded-xl" />}>
+      <Suspense
+        fallback={
+          <div className="space-y-6" aria-label="Chargement de l’abonnement">
+            <Skeleton className="h-44 rounded-xl" />
+            <div className="grid gap-4 md:grid-cols-3">
+              <Skeleton className="h-44 rounded-xl" />
+              <Skeleton className="h-44 rounded-xl" />
+              <Skeleton className="h-44 rounded-xl" />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <Skeleton className="h-32 rounded-xl" />
+              <Skeleton className="h-32 rounded-xl" />
+              <Skeleton className="h-32 rounded-xl" />
+              <Skeleton className="h-32 rounded-xl" />
+            </div>
+          </div>
+        }
+      >
         <SubscriptionContent />
       </Suspense>
-
-      <div>
-        <h2 className="mb-4 text-lg font-semibold">Toutes les formules</h2>
-        <Pricing />
-      </div>
     </div>
   );
 }

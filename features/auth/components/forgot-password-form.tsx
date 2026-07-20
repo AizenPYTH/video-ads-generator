@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { resetPassword } from "@/features/auth/actions";
@@ -48,8 +49,8 @@ export function ForgotPasswordForm() {
 
   if (isSent) {
     return (
-      <div className="space-y-4 text-center">
-        <p className="text-sm text-muted-foreground">
+      <div className="space-y-5 text-center" role="status">
+        <p className="text-sm leading-6 text-muted-foreground">
           Si un compte existe avec cette adresse, vous recevrez un email avec
           les instructions pour réinitialiser votre mot de passe.
         </p>
@@ -61,7 +62,7 @@ export function ForgotPasswordForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" noValidate>
       <div className="space-y-2">
         <Label htmlFor="email">Email</Label>
         <Input
@@ -69,19 +70,27 @@ export function ForgotPasswordForm() {
           type="email"
           placeholder="vous@exemple.fr"
           autoComplete="email"
+          aria-invalid={Boolean(errors.email)}
           {...register("email")}
         />
         {errors.email && (
-          <p className="text-sm text-destructive">{errors.email.message}</p>
+          <p className="text-xs leading-relaxed text-destructive" role="alert">
+            {errors.email.message}
+          </p>
         )}
       </div>
 
-      <Button type="submit" className="w-full" disabled={isLoading}>
-        {isLoading ? "Envoi..." : "Envoyer le lien"}
-      </Button>
+      <LoadingButton
+        type="submit"
+        className="w-full"
+        loading={isLoading}
+        loadingText="Envoi en cours"
+      >
+        Envoyer le lien
+      </LoadingButton>
 
       <p className="text-center text-sm text-muted-foreground">
-        <Link href="/login" className="text-primary hover:underline">
+        <Link href="/login" className="rounded-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           Retour à la connexion
         </Link>
       </p>

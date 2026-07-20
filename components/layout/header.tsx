@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { LogOut, Moon, Settings, Sun, User } from "lucide-react";
+import { useState } from "react";
+import { LogOut, Menu, Moon, Settings, Sun, User } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +13,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Sheet,
+  SheetContent,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { Sidebar } from "@/components/layout/sidebar";
 import { useTheme } from "@/components/providers";
 import { signOut } from "@/features/auth/actions";
 
@@ -24,6 +32,7 @@ interface HeaderProps {
 
 export function Header({ user }: HeaderProps) {
   const { theme, setTheme } = useTheme();
+  const [mobileOpen, setMobileOpen] = useState(false);
   const initials = user?.fullName
     ? user.fullName
         .split(" ")
@@ -34,15 +43,36 @@ export function Header({ user }: HeaderProps) {
     : user?.email?.[0]?.toUpperCase() ?? "U";
 
   return (
-    <header className="flex h-16 items-center justify-between border-b border-border bg-background px-6">
-      <div />
+    <header className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b border-border/60 bg-background/90 px-3 shadow-sm shadow-navy-900/[0.03] backdrop-blur-xl supports-[backdrop-filter]:bg-background/75 sm:px-4 lg:px-6">
+      <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+        <SheetTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="md:hidden"
+            aria-label="Ouvrir le menu principal"
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
+        </SheetTrigger>
+        <SheetContent side="left" className="w-72 border-0 p-0">
+          <SheetTitle className="sr-only">Navigation principale</SheetTitle>
+          <Sidebar
+            className="w-full border-0"
+            onNavigate={() => setMobileOpen(false)}
+          />
+        </SheetContent>
+      </Sheet>
 
-      <div className="flex items-center gap-2">
+      <div className="flex-1" />
+
+      <div className="flex items-center gap-1">
         <Button
           variant="ghost"
           size="icon"
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
           aria-label="Changer le thème"
+          title="Changer le thème"
         >
           {theme === "dark" ? (
             <Sun className="h-4 w-4" />
@@ -53,10 +83,17 @@ export function Header({ user }: HeaderProps) {
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="relative h-10 w-10 rounded-full">
-              <Avatar>
-                <AvatarFallback>{initials}</AvatarFallback>
+            <Button
+              variant="ghost"
+              className="relative h-9 gap-2 px-1.5 outline-none hover:bg-glacier-100 focus-visible:ring-2 focus-visible:ring-ring sm:px-2"
+              aria-label="Ouvrir le menu du compte"
+            >
+              <Avatar className="h-8 w-8">
+                <AvatarFallback className="text-xs">{initials}</AvatarFallback>
               </Avatar>
+              <span className="hidden text-sm font-medium md:inline-block">
+                {user?.fullName ?? user?.email?.split("@")[0] ?? "Compte"}
+              </span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-56" align="end" forceMount>

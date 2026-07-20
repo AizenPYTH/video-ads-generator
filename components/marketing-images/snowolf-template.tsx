@@ -1,7 +1,8 @@
 import { Snowflake, Truck, ShieldCheck, Award, Package } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { APP_NAME } from "@/lib/brand";
 
-interface SnowolfTemplateProps {
+interface ListingTemplateProps {
   children?: React.ReactNode;
   className?: string;
   showBadges?: boolean;
@@ -14,11 +15,11 @@ const badges = [
   { icon: Package, label: "Expédition soignée" },
 ];
 
-export function SnowolfTemplate({
+export function ListingTemplate({
   children,
   className,
   showBadges = true,
-}: SnowolfTemplateProps) {
+}: ListingTemplateProps) {
   return (
     <div
       className={cn(
@@ -39,7 +40,7 @@ export function SnowolfTemplate({
           <Snowflake className="h-4 w-4" />
         </div>
         <span className="text-sm font-bold tracking-wide text-white">
-          SNOWOLF
+          {APP_NAME}
         </span>
       </div>
 
@@ -72,3 +73,6 @@ export function SnowolfTemplate({
     </div>
   );
 }
+
+/** @deprecated Utiliser ListingTemplate */
+export const SnowolfTemplate = ListingTemplate;

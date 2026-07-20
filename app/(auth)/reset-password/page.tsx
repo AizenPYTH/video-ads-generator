@@ -10,10 +10,10 @@ import { ResetPasswordForm } from "@/features/auth/components/reset-password-for
 export default function ResetPasswordPage() {
   return (
     <Card className="border-0 shadow-none">
-      <CardHeader className="px-0 pt-0">
-        <CardTitle className="text-2xl">Nouveau mot de passe</CardTitle>
+      <CardHeader className="px-0 pt-0 text-center">
+        <CardTitle className="text-2xl tracking-tight">Nouveau mot de passe</CardTitle>
         <CardDescription>
-          Choisissez un nouveau mot de passe pour votre compte
+          Choisissez un mot de passe d&apos;au moins 8 caractères.
         </CardDescription>
       </CardHeader>
       <CardContent className="px-0 pb-0">

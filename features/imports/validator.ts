@@ -9,6 +9,8 @@ export type ImportRowValidationError = {
 export type ImportValidationResult = {
   valid: boolean;
   errors: ImportRowValidationError[];
+  /** Lignes sans erreur bloquante */
+  validRowIndexes: number[];
 };
 
 export function validateImportRow(
@@ -20,13 +22,13 @@ export function validateImportRow(
   if (!row.titre.trim()) {
     errors.push({
       row: rowNumber,
-      field: "titre",
+      field: "Title",
       message: "Le titre est obligatoire.",
     });
   } else if (row.titre.length > 80) {
     errors.push({
       row: rowNumber,
-      field: "titre",
+      field: "Title",
       message: "Le titre ne doit pas dépasser 80 caractères.",
     });
   }
@@ -35,7 +37,7 @@ export function validateImportRow(
   if (isNaN(prix) || prix <= 0) {
     errors.push({
       row: rowNumber,
-      field: "prix_vente",
+      field: "Start price",
       message: "Le prix de vente doit être un nombre positif.",
     });
   }
@@ -54,7 +56,7 @@ export function validateImportRow(
   if (row.quantite < 1) {
     errors.push({
       row: rowNumber,
-      field: "quantite",
+      field: "Quantity",
       message: "La quantité doit être au moins 1.",
     });
   }
@@ -62,10 +64,12 @@ export function validateImportRow(
   if (row.sku && row.sku.length > 50) {
     errors.push({
       row: rowNumber,
-      field: "sku",
+      field: "Custom label (SKU)",
       message: "Le SKU ne doit pas dépasser 50 caractères.",
     });
   }
+
+  // Category ID volontairement non obligatoire
 
   return errors;
 }
@@ -77,8 +81,15 @@ export function validateImportRows(
     validateImportRow(row, index + 1),
   );
 
+  const badRows = new Set(errors.map((e) => e.row));
+  const validRowIndexes = rows
+    .map((_, index) => index)
+    .filter((index) => !badRows.has(index + 1));
+
   return {
-    valid: errors.length === 0,
+    // Fichier OK s'il reste au moins une ligne valide (ne bloque pas tout)
+    valid: validRowIndexes.length > 0,
     errors,
+    validRowIndexes,
   };
 }

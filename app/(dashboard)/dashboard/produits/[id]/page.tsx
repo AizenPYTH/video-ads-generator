@@ -7,7 +7,7 @@ import { ProductDetail } from "@/features/analyzed-products/components/product-d
 import { Button } from "@/components/ui/button";
 
 export const metadata = {
-  title: "Détail produit — SNOWOLF",
+  title: "Détail produit — Smart Seller",
 };
 
 type PageProps = {

@@ -1,80 +1,139 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Upload } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { createImportBatch, processImportBatch } from "@/features/imports/actions";
+import { FileDropzone } from "@/components/uploads/file-dropzone";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  createImportBatch,
+  processImportBatch,
+} from "@/features/imports/actions";
 
 type ImportUploadProps = {
   onBatchCreated?: (batchId: string) => void;
 };
 
 export function ImportUpload({ onBatchCreated }: ImportUploadProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const router = useRouter();
+  const [files, setFiles] = useState<File[]>([]);
+  const [phase, setPhase] = useState<"idle" | "parsing" | "processing">("idle");
+  const [rowCount, setRowCount] = useState<number | null>(null);
 
-  async function handleFile(file: File) {
-    setIsLoading(true);
-
-    const isXlsx = file.name.toLowerCase().endsWith(".xlsx");
-    const content = isXlsx
-      ? await file.arrayBuffer()
-      : await file.text();
-
-    const result = await createImportBatch(file.name, content);
-
-    if (result.error) {
-      toast.error(result.error);
-      setIsLoading(false);
+  async function handleImport() {
+    const file = files[0];
+    if (!file) {
+      toast.error("Choisissez un fichier CSV ou XLSX.");
       return;
     }
 
-    if (result.data?.batchId) {
-      toast.success("Fichier importé. Traitement en cours...");
-      onBatchCreated?.(result.data.batchId);
+    setPhase("parsing");
+    setRowCount(null);
 
-      const processResult = await processImportBatch(result.data.batchId);
-      if (processResult.error) {
-        toast.error(processResult.error);
-      } else if (processResult.data) {
-        toast.success(
-          `${processResult.data.succeeded} annonce(s) créée(s), ${processResult.data.failed} erreur(s).`,
+    try {
+      const content = await file.arrayBuffer();
+      const result = await createImportBatch(file.name, content);
+
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+
+      if (result.data) {
+        setRowCount(result.data.acceptedRows + result.data.rowErrors.length);
+      }
+
+      if (result.data?.rowErrors?.length) {
+        const preview = result.data.rowErrors
+          .slice(0, 8)
+          .map((error) => `Ligne ${error.row} : ${error.message}`)
+          .join("\n");
+        toast.warning(
+          `${result.data.rowErrors.length} ligne${result.data.rowErrors.length > 1 ? "s" : ""} à corriger.\n${preview}`,
+          { duration: 12_000 },
         );
       }
-    }
 
-    setIsLoading(false);
+      if (result.data?.batchId) {
+        toast.success("Analyse en cours");
+        onBatchCreated?.(result.data.batchId);
+        setPhase("processing");
+
+        const processResult = await processImportBatch(result.data.batchId);
+        if (processResult.error) {
+          toast.error(processResult.error);
+        } else if (processResult.data) {
+          const failed = processResult.data.failed;
+          toast.success(
+            failed > 0
+              ? `Import terminé · ${failed} ligne${failed > 1 ? "s" : ""} à corriger`
+              : "Import terminé",
+          );
+        }
+
+        router.push(`/dashboard/imports/${result.data.batchId}`);
+        router.refresh();
+      }
+    } catch {
+      toast.error("Impossible de lire ou d'importer ce fichier.");
+    } finally {
+      setPhase("idle");
+    }
   }
+
+  const isLoading = phase !== "idle";
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Importer des annonces</CardTitle>
         <CardDescription>
-          Importez un fichier CSV ou XLSX (sans macros). Colonnes requises : titre, prix_vente.
+          CSV ou XLSX uniquement (pas de XLSM). Chaque ligne prépare une annonce
+          brouillon. La catégorie eBay peut être détectée automatiquement.
         </CardDescription>
       </CardHeader>
-      <CardContent>
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".csv,.xlsx"
-          className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) handleFile(file);
+      <CardContent className="space-y-4">
+        <FileDropzone
+          files={files}
+          onFilesChange={(nextFiles) => {
+            setFiles(nextFiles);
+            setRowCount(null);
           }}
-        />
-        <Button
-          variant="outline"
+          extensions={[".csv", ".xlsx"]}
           disabled={isLoading}
-          onClick={() => inputRef.current?.click()}
+          label="Déposez votre fichier d'import ici"
+          acceptedFormatsLabel="CSV ou XLSX uniquement"
+          noClientSizeLimitLabel="Aucune limite de taille côté navigateur"
+          validate={(file) =>
+            file.name.toLowerCase().endsWith(".xlsm")
+              ? "Les fichiers XLSM (macros) ne sont pas acceptés."
+              : null
+          }
+        />
+
+        {rowCount !== null && (
+          <p className="text-sm text-muted-foreground" aria-live="polite">
+            {rowCount} ligne(s) détectée(s) après analyse du fichier.
+          </p>
+        )}
+
+        <Button
+          type="button"
+          disabled={isLoading || files.length === 0}
+          onClick={handleImport}
           className="w-full"
+          aria-busy={isLoading}
         >
-          <Upload className="mr-2 h-4 w-4" />
-          {isLoading ? "Import en cours..." : "Choisir un fichier"}
+          {isLoading && <Loader2 className="animate-spin" aria-hidden="true" />}
+          {isLoading ? "Analyse en cours" : "Lancer l’import"}
         </Button>
       </CardContent>
     </Card>

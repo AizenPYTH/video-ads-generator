@@ -1,0 +1,1850 @@
+{
+  "byTable": {
+    "activity_logs": [
+      {
+        "name": "id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": "gen_random_uuid()"
+      },
+      {
+        "name": "user_id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "action",
+        "udt": "text",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "entity_type",
+        "udt": "text",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "entity_id",
+        "udt": "uuid",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "metadata",
+        "udt": "jsonb",
+        "nullable": "NO",
+        "def": "'{}'::jsonb"
+      },
+      {
+        "name": "ip_address",
+        "udt": "inet",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "created_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      }
+    ],
+    "ad_reference_resolutions": [
+      {
+        "name": "id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": "gen_random_uuid()"
+      },
+      {
+        "name": "ad_id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "user_id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "detected_ref",
+        "udt": "text",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "mapping_id",
+        "udt": "uuid",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "resolution",
+        "udt": "text",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "proposed_data",
+        "udt": "jsonb",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "confirmed_data",
+        "udt": "jsonb",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "created_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      }
+    ],
+    "ads": [
+      {
+        "name": "id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": "gen_random_uuid()"
+      },
+      {
+        "name": "user_id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "title",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "status",
+        "udt": "ad_status",
+        "nullable": "NO",
+        "def": "'draft'::ad_status"
+      },
+      {
+        "name": "suggested_price",
+        "udt": "numeric",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "currency",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'EUR'::text"
+      },
+      {
+        "name": "ebay_listing_id",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "ebay_offer_id",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "ebay_category_id",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "error_message",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "created_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      },
+      {
+        "name": "updated_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      },
+      {
+        "name": "archived_at",
+        "udt": "timestamptz",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "published_at",
+        "udt": "timestamptz",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "sku",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "quantity",
+        "udt": "int4",
+        "nullable": "NO",
+        "def": "1"
+      },
+      {
+        "name": "subtitle",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "source",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'photo'::text"
+      },
+      {
+        "name": "marketplace_id",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'EBAY_FR'::text"
+      },
+      {
+        "name": "statut",
+        "udt": "ad_statut",
+        "nullable": "NO",
+        "def": "'DRAFT'::ad_statut"
+      }
+    ],
+    "ebay_accounts": [
+      {
+        "name": "id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": "gen_random_uuid()"
+      },
+      {
+        "name": "user_id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "ebay_user_id",
+        "udt": "text",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "marketplace",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'EBAY_FR'::text"
+      },
+      {
+        "name": "access_token_encrypted",
+        "udt": "text",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "refresh_token_encrypted",
+        "udt": "text",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "token_expires_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "scopes",
+        "udt": "_text",
+        "nullable": "NO",
+        "def": "'{}'::text[]"
+      },
+      {
+        "name": "is_active",
+        "udt": "bool",
+        "nullable": "NO",
+        "def": "true"
+      },
+      {
+        "name": "created_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      },
+      {
+        "name": "updated_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      },
+      {
+        "name": "connected_at",
+        "udt": "timestamptz",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "default_currency",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'EUR'::text"
+      },
+      {
+        "name": "default_language",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'fr_FR'::text"
+      },
+      {
+        "name": "default_country",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'FR'::text"
+      },
+      {
+        "name": "default_location_key",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "fulfillment_policy_id",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "payment_policy_id",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "return_policy_id",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "listing_duration",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'GTC'::text"
+      },
+      {
+        "name": "listing_format",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'FIXED_PRICE'::text"
+      },
+      {
+        "name": "default_quantity",
+        "udt": "int4",
+        "nullable": "NO",
+        "def": "1"
+      },
+      {
+        "name": "policies_cache",
+        "udt": "jsonb",
+        "nullable": "NO",
+        "def": "'{}'::jsonb"
+      },
+      {
+        "name": "locations_cache",
+        "udt": "jsonb",
+        "nullable": "NO",
+        "def": "'[]'::jsonb"
+      },
+      {
+        "name": "last_config_test_at",
+        "udt": "timestamptz",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "last_config_test_result",
+        "udt": "jsonb",
+        "nullable": "YES",
+        "def": null
+      }
+    ],
+    "generated_content": [
+      {
+        "name": "id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": "gen_random_uuid()"
+      },
+      {
+        "name": "ad_id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "user_id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "title",
+        "udt": "text",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "description",
+        "udt": "text",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "features",
+        "udt": "jsonb",
+        "nullable": "NO",
+        "def": "'{}'::jsonb"
+      },
+      {
+        "name": "item_specifics",
+        "udt": "jsonb",
+        "nullable": "NO",
+        "def": "'{}'::jsonb"
+      },
+      {
+        "name": "category_id",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "category_name",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "seo_keywords",
+        "udt": "_text",
+        "nullable": "NO",
+        "def": "'{}'::text[]"
+      },
+      {
+        "name": "suggested_price",
+        "udt": "numeric",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "currency",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'EUR'::text"
+      },
+      {
+        "name": "confidence_score",
+        "udt": "numeric",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "is_user_edited",
+        "udt": "bool",
+        "nullable": "NO",
+        "def": "false"
+      },
+      {
+        "name": "raw_generation",
+        "udt": "jsonb",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "created_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      },
+      {
+        "name": "updated_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      },
+      {
+        "name": "subtitle",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      }
+    ],
+    "listing_history": [
+      {
+        "name": "id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": "gen_random_uuid()"
+      },
+      {
+        "name": "user_id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "ad_id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "action",
+        "udt": "text",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "field",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "old_value",
+        "udt": "jsonb",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "new_value",
+        "udt": "jsonb",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "metadata",
+        "udt": "jsonb",
+        "nullable": "NO",
+        "def": "'{}'::jsonb"
+      },
+      {
+        "name": "created_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      }
+    ],
+    "listing_publications": [
+      {
+        "name": "id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": "gen_random_uuid()"
+      },
+      {
+        "name": "user_id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "ad_id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "status",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'pending'::text"
+      },
+      {
+        "name": "offer_id",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "listing_id",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "marketplace_id",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'EBAY_FR'::text"
+      },
+      {
+        "name": "error_code",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "error_message",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "request_payload",
+        "udt": "jsonb",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "response_payload",
+        "udt": "jsonb",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "idempotency_key",
+        "udt": "text",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "created_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      },
+      {
+        "name": "updated_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      },
+      {
+        "name": "statut",
+        "udt": "publication_statut",
+        "nullable": "NO",
+        "def": "'PENDING'::publication_statut"
+      }
+    ],
+    "manufacturer_reference_mappings": [
+      {
+        "name": "id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": "gen_random_uuid()"
+      },
+      {
+        "name": "reference_code",
+        "udt": "text",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "reference_type",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'apple_model'::text"
+      },
+      {
+        "name": "brand",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "product_type",
+        "udt": "text",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "product_name",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "model_line",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "compatible_devices",
+        "udt": "_text",
+        "nullable": "NO",
+        "def": "'{}'::text[]"
+      },
+      {
+        "name": "capacity",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "color",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "category",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "notes",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "source",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'seed'::text"
+      },
+      {
+        "name": "source_url",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "confidence",
+        "udt": "numeric",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "verified",
+        "udt": "bool",
+        "nullable": "NO",
+        "def": "false"
+      },
+      {
+        "name": "created_by",
+        "udt": "uuid",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "verified_by",
+        "udt": "uuid",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "verified_at",
+        "udt": "timestamptz",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "created_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      },
+      {
+        "name": "updated_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      }
+    ],
+    "notification_settings": [
+      {
+        "name": "id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": "gen_random_uuid()"
+      },
+      {
+        "name": "user_id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "email_enabled",
+        "udt": "bool",
+        "nullable": "NO",
+        "def": "true"
+      },
+      {
+        "name": "analysis_completed",
+        "udt": "bool",
+        "nullable": "NO",
+        "def": "true"
+      },
+      {
+        "name": "import_completed",
+        "udt": "bool",
+        "nullable": "NO",
+        "def": "true"
+      },
+      {
+        "name": "publish_succeeded",
+        "udt": "bool",
+        "nullable": "NO",
+        "def": "true"
+      },
+      {
+        "name": "publish_failed",
+        "udt": "bool",
+        "nullable": "NO",
+        "def": "true"
+      },
+      {
+        "name": "quota_nearly_reached",
+        "udt": "bool",
+        "nullable": "NO",
+        "def": "true"
+      },
+      {
+        "name": "subscription_updates",
+        "udt": "bool",
+        "nullable": "NO",
+        "def": "true"
+      },
+      {
+        "name": "payment_failed",
+        "udt": "bool",
+        "nullable": "NO",
+        "def": "true"
+      },
+      {
+        "name": "created_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      },
+      {
+        "name": "updated_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      }
+    ],
+    "photos": [
+      {
+        "name": "id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": "gen_random_uuid()"
+      },
+      {
+        "name": "ad_id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "user_id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "storage_path",
+        "udt": "text",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "file_name",
+        "udt": "text",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "file_size",
+        "udt": "int4",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "mime_type",
+        "udt": "text",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "sort_order",
+        "udt": "int4",
+        "nullable": "NO",
+        "def": "0"
+      },
+      {
+        "name": "created_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      },
+      {
+        "name": "kind",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'product'::text"
+      }
+    ],
+    "product_import_batches": [
+      {
+        "name": "id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": "gen_random_uuid()"
+      },
+      {
+        "name": "user_id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "filename",
+        "udt": "text",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "file_type",
+        "udt": "text",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "status",
+        "udt": "import_batch_status",
+        "nullable": "NO",
+        "def": "'UPLOADED'::import_batch_status"
+      },
+      {
+        "name": "total_rows",
+        "udt": "int4",
+        "nullable": "NO",
+        "def": "0"
+      },
+      {
+        "name": "completed_rows",
+        "udt": "int4",
+        "nullable": "NO",
+        "def": "0"
+      },
+      {
+        "name": "failed_rows",
+        "udt": "int4",
+        "nullable": "NO",
+        "def": "0"
+      },
+      {
+        "name": "needs_review_rows",
+        "udt": "int4",
+        "nullable": "NO",
+        "def": "0"
+      },
+      {
+        "name": "error_message",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "created_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      },
+      {
+        "name": "updated_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      },
+      {
+        "name": "statut",
+        "udt": "import_batch_statut",
+        "nullable": "NO",
+        "def": "'PENDING'::import_batch_statut"
+      }
+    ],
+    "product_import_rows": [
+      {
+        "name": "id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": "gen_random_uuid()"
+      },
+      {
+        "name": "batch_id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "user_id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "row_number",
+        "udt": "int4",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "source_data",
+        "udt": "jsonb",
+        "nullable": "NO",
+        "def": "'{}'::jsonb"
+      },
+      {
+        "name": "normalized_data",
+        "udt": "jsonb",
+        "nullable": "NO",
+        "def": "'{}'::jsonb"
+      },
+      {
+        "name": "status",
+        "udt": "import_row_status",
+        "nullable": "NO",
+        "def": "'PENDING'::import_row_status"
+      },
+      {
+        "name": "ad_id",
+        "udt": "uuid",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "product_id",
+        "udt": "uuid",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "error_code",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "error_message",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "warnings",
+        "udt": "_text",
+        "nullable": "NO",
+        "def": "'{}'::text[]"
+      },
+      {
+        "name": "identification",
+        "udt": "jsonb",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "generated_fields",
+        "udt": "jsonb",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "idempotency_key",
+        "udt": "text",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "created_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      },
+      {
+        "name": "updated_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      },
+      {
+        "name": "statut",
+        "udt": "import_row_statut",
+        "nullable": "NO",
+        "def": "'PENDING'::import_row_statut"
+      }
+    ],
+    "products": [
+      {
+        "name": "id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": "gen_random_uuid()"
+      },
+      {
+        "name": "ad_id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "user_id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "brand",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "model",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "color",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "capacity",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "condition",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "serial_number",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "visible_references",
+        "udt": "_text",
+        "nullable": "NO",
+        "def": "'{}'::text[]"
+      },
+      {
+        "name": "accessories",
+        "udt": "_text",
+        "nullable": "NO",
+        "def": "'{}'::text[]"
+      },
+      {
+        "name": "defects",
+        "udt": "_text",
+        "nullable": "NO",
+        "def": "'{}'::text[]"
+      },
+      {
+        "name": "confidence_score",
+        "udt": "numeric",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "raw_analysis",
+        "udt": "jsonb",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "analyzed_at",
+        "udt": "timestamptz",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "created_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      },
+      {
+        "name": "updated_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      },
+      {
+        "name": "manufacturer_reference",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "model_number",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      }
+    ],
+    "seller_branding": [
+      {
+        "name": "id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": "gen_random_uuid()"
+      },
+      {
+        "name": "user_id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "brand_name",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'SNOWOLF'::text"
+      },
+      {
+        "name": "logo_storage_path",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "primary_color",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'#0B1220'::text"
+      },
+      {
+        "name": "accent_color",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'#7DD3FC'::text"
+      },
+      {
+        "name": "secondary_color",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'#F8FAFC'::text"
+      },
+      {
+        "name": "badge_texts",
+        "udt": "_text",
+        "nullable": "NO",
+        "def": "ARRAY['Livraison rapide'::text, 'Produit test├®'::text, 'Qualit├® premium'::text, 'Exp├®dition soign├®e'::text]"
+      },
+      {
+        "name": "template_id",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'snowolf_v1'::text"
+      },
+      {
+        "name": "auto_generate_on_import",
+        "udt": "bool",
+        "nullable": "NO",
+        "def": "true"
+      },
+      {
+        "name": "created_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      },
+      {
+        "name": "updated_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      }
+    ],
+    "stripe_events": [
+      {
+        "name": "id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": "gen_random_uuid()"
+      },
+      {
+        "name": "event_id",
+        "udt": "text",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "event_type",
+        "udt": "text",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "processed_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      },
+      {
+        "name": "payload",
+        "udt": "jsonb",
+        "nullable": "NO",
+        "def": "'{}'::jsonb"
+      },
+      {
+        "name": "user_id",
+        "udt": "uuid",
+        "nullable": "YES",
+        "def": null
+      }
+    ],
+    "subscriptions": [
+      {
+        "name": "id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": "gen_random_uuid()"
+      },
+      {
+        "name": "user_id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "plan",
+        "udt": "subscription_plan",
+        "nullable": "NO",
+        "def": "'free'::subscription_plan"
+      },
+      {
+        "name": "status",
+        "udt": "subscription_status",
+        "nullable": "NO",
+        "def": "'active'::subscription_status"
+      },
+      {
+        "name": "stripe_customer_id",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "stripe_subscription_id",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "ads_limit",
+        "udt": "int4",
+        "nullable": "NO",
+        "def": "5"
+      },
+      {
+        "name": "ads_used_this_period",
+        "udt": "int4",
+        "nullable": "NO",
+        "def": "0"
+      },
+      {
+        "name": "current_period_start",
+        "udt": "timestamptz",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "current_period_end",
+        "udt": "timestamptz",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "created_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      },
+      {
+        "name": "updated_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      },
+      {
+        "name": "statut",
+        "udt": "subscription_statut",
+        "nullable": "NO",
+        "def": "'INCOMPLETE'::subscription_statut"
+      }
+    ],
+    "usage_meters": [
+      {
+        "name": "id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": "gen_random_uuid()"
+      },
+      {
+        "name": "user_id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "period_start",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "period_end",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "analyses_used",
+        "udt": "int4",
+        "nullable": "NO",
+        "def": "0"
+      },
+      {
+        "name": "ads_used",
+        "udt": "int4",
+        "nullable": "NO",
+        "def": "0"
+      },
+      {
+        "name": "publishes_used",
+        "udt": "int4",
+        "nullable": "NO",
+        "def": "0"
+      },
+      {
+        "name": "import_rows_used",
+        "udt": "int4",
+        "nullable": "NO",
+        "def": "0"
+      },
+      {
+        "name": "created_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      },
+      {
+        "name": "updated_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      }
+    ],
+    "user_settings": [
+      {
+        "name": "id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": "gen_random_uuid()"
+      },
+      {
+        "name": "user_id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "first_name",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "last_name",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "company_name",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "phone",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "country",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'FR'::text"
+      },
+      {
+        "name": "language",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'fr'::text"
+      },
+      {
+        "name": "timezone",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'Europe/Paris'::text"
+      },
+      {
+        "name": "currency",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'EUR'::text"
+      },
+      {
+        "name": "theme",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'system'::text"
+      },
+      {
+        "name": "date_format",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'DD/MM/YYYY'::text"
+      },
+      {
+        "name": "price_format",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'eu'::text"
+      },
+      {
+        "name": "list_view",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'table'::text"
+      },
+      {
+        "name": "page_size",
+        "udt": "int4",
+        "nullable": "NO",
+        "def": "20"
+      },
+      {
+        "name": "ai_marketplace",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'EBAY_FR'::text"
+      },
+      {
+        "name": "ai_title_language",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'fr'::text"
+      },
+      {
+        "name": "ai_description_language",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'fr'::text"
+      },
+      {
+        "name": "ai_description_style",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'professional'::text"
+      },
+      {
+        "name": "ai_detail_level",
+        "udt": "text",
+        "nullable": "NO",
+        "def": "'standard'::text"
+      },
+      {
+        "name": "ai_auto_title",
+        "udt": "bool",
+        "nullable": "NO",
+        "def": "true"
+      },
+      {
+        "name": "ai_auto_description",
+        "udt": "bool",
+        "nullable": "NO",
+        "def": "true"
+      },
+      {
+        "name": "ai_auto_price",
+        "udt": "bool",
+        "nullable": "NO",
+        "def": "true"
+      },
+      {
+        "name": "ai_confidence_threshold",
+        "udt": "numeric",
+        "nullable": "NO",
+        "def": "0.70"
+      },
+      {
+        "name": "ai_show_help_form",
+        "udt": "bool",
+        "nullable": "NO",
+        "def": "true"
+      },
+      {
+        "name": "ai_serpapi_enabled",
+        "udt": "bool",
+        "nullable": "NO",
+        "def": "true"
+      },
+      {
+        "name": "ai_never_guess_without_evidence",
+        "udt": "bool",
+        "nullable": "NO",
+        "def": "true"
+      },
+      {
+        "name": "created_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      },
+      {
+        "name": "updated_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      }
+    ],
+    "users": [
+      {
+        "name": "id",
+        "udt": "uuid",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "email",
+        "udt": "text",
+        "nullable": "NO",
+        "def": null
+      },
+      {
+        "name": "full_name",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "avatar_url",
+        "udt": "text",
+        "nullable": "YES",
+        "def": null
+      },
+      {
+        "name": "role",
+        "udt": "user_role",
+        "nullable": "NO",
+        "def": "'user'::user_role"
+      },
+      {
+        "name": "created_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      },
+      {
+        "name": "updated_at",
+        "udt": "timestamptz",
+        "nullable": "NO",
+        "def": "now()"
+      }
+    ]
+  },
+  "byEnum": {
+    "ad_status": [
+      "draft",
+      "analyzing",
+      "analyzed",
+      "ebay_draft",
+      "published",
+      "error",
+      "uploading",
+      "editing",
+      "ready",
+      "awaiting_hints",
+      "archived",
+      "ended"
+    ],
+    "ad_statut": [
+      "DRAFT",
+      "ANALYZING",
+      "NEEDS_REVIEW",
+      "READY",
+      "VALIDATING",
+      "INVENTORY_CREATED",
+      "OFFER_CREATED",
+      "PUBLISHING",
+      "PUBLISHED",
+      "FAILED",
+      "ARCHIVED",
+      "ENDED",
+      "SENDING_TO_EBAY"
+    ],
+    "analysis_run_statut": [
+      "PENDING",
+      "RUNNING",
+      "COMPLETED",
+      "FAILED"
+    ],
+    "import_batch_status": [
+      "UPLOADED",
+      "PROCESSING",
+      "COMPLETED",
+      "PARTIAL_ERROR",
+      "FAILED"
+    ],
+    "import_batch_statut": [
+      "PENDING",
+      "PROCESSING",
+      "COMPLETED",
+      "FAILED",
+      "PARTIAL"
+    ],
+    "import_row_status": [
+      "PENDING",
+      "VALIDATING",
+      "IDENTIFYING",
+      "SEARCHING",
+      "GENERATING",
+      "NEEDS_REVIEW",
+      "READY",
+      "ERROR"
+    ],
+    "import_row_statut": [
+      "PENDING",
+      "SUCCESS",
+      "FAILED",
+      "SKIPPED"
+    ],
+    "publication_statut": [
+      "PENDING",
+      "IN_PROGRESS",
+      "SUCCESS",
+      "FAILED",
+      "CANCELLED"
+    ],
+    "subscription_plan": [
+      "free",
+      "pro",
+      "enterprise",
+      "starter",
+      "business"
+    ],
+    "subscription_status": [
+      "active",
+      "canceled",
+      "past_due",
+      "trialing"
+    ],
+    "subscription_statut": [
+      "ACTIVE",
+      "TRIALING",
+      "PAST_DUE",
+      "CANCELED",
+      "UNPAID",
+      "INCOMPLETE",
+      "INCOMPLETE_EXPIRED",
+      "PAUSED"
+    ],
+    "url_import_statut": [
+      "PENDING",
+      "FETCHING",
+      "ANALYZING",
+      "COMPLETED",
+      "FAILED"
+    ],
+    "user_role": [
+      "user",
+      "admin"
+    ]
+  },
+  "missing": [
+    "profiles",
+    "ad_images",
+    "ad_history",
+    "publication_attempts",
+    "analyzed_products",
+    "analysis_runs",
+    "analysis_evidence",
+    "url_imports",
+    "ebay_policies",
+    "ebay_locations",
+    "ebay_tokens",
+    "ebay_publication_attempts",
+    "subscription_plans",
+    "usage_counters",
+    "stripe_customers",
+    "marketing_templates",
+    "marketing_images",
+    "serpapi_cache",
+    "url_import_cache",
+    "workspaces",
+    "workspace_usage",
+    "usage_reservations",
+    "ebay_connections",
+    "reference_search_cache",
+    "stripe_webhook_events"
+  ],
+  "overlap": [
+    "user_settings",
+    "notification_settings",
+    "ads",
+    "listing_publications",
+    "product_import_batches",
+    "product_import_rows",
+    "ebay_accounts",
+    "subscriptions",
+    "stripe_events"
+  ],
+  "extra": [
+    "activity_logs",
+    "ad_reference_resolutions",
+    "generated_content",
+    "listing_history",
+    "manufacturer_reference_mappings",
+    "photos",
+    "products",
+    "seller_branding",
+    "usage_meters",
+    "users"
+  ]
+}

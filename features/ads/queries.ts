@@ -91,3 +91,31 @@ export async function fetchAdById(
 
   return data as AdsRow | null;
 }
+
+export type AdImageRow = {
+  id: string;
+  url: string;
+  ordre: number;
+  est_principale: boolean;
+  storage_path: string | null;
+};
+
+export async function fetchAdImages(
+  userId: string,
+  adId: string,
+): Promise<AdImageRow[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("ad_images")
+    .select("id, url, ordre, est_principale, storage_path")
+    .eq("user_id", userId)
+    .eq("ad_id", adId)
+    .order("ordre", { ascending: true });
+
+  if (error) {
+    throw new Error(`Échec de la récupération des images : ${error.message}`);
+  }
+
+  return (data ?? []) as AdImageRow[];
+}

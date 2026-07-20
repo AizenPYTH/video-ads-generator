@@ -1,33 +1,38 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/layout/page-header";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { UrlImportForm } from "@/features/url-import/components/url-import-form";
 
 export const metadata = {
-  title: "Import par URL — SNOWOLF",
+  title: "Import par URL — Smart Seller",
 };
 
 export default function CreerUrlPage() {
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    <div className="mx-auto max-w-3xl space-y-6">
       <Button variant="ghost" size="sm" asChild>
         <Link href="/dashboard/creer">
           <ArrowLeft className="mr-2 h-4 w-4" />
-          Retour
+          Créer une annonce
         </Link>
       </Button>
 
-      <div>
-        <h1 className="text-2xl font-bold text-navy-900">Import depuis une URL</h1>
-        <p className="text-muted-foreground">
-          Collez le lien d&apos;un produit pour créer une annonce
-        </p>
-      </div>
+      <PageHeader
+        title="Importer depuis un lien"
+        description="Collez l'adresse d'un produit pour préparer son annonce."
+      />
 
-      <Card>
+      <Card className="border-border/70">
         <CardHeader>
-          <CardTitle>Lien du produit</CardTitle>
+          <CardTitle className="text-lg">Adresse du produit</CardTitle>
           <CardDescription>
             eBay, site marchand ou autre page produit compatible
           </CardDescription>

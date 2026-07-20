@@ -8,13 +8,14 @@ import { fetchAds } from "@/features/ads/queries";
 import { AdFilters } from "@/features/ads/components/ad-filters";
 import { AdCard } from "@/components/ads/ad-card";
 import { EmptyState } from "@/components/ads/empty-state";
+import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toBadgeStatus } from "@/lib/ads/status-map";
-import type { AdStatusGroup } from "@/features/ads/status";
+import { getStatusLabel, type AdStatusGroup } from "@/features/ads/status";
 
 export const metadata = {
-  title: "Mes annonces — SNOWOLF",
+  title: "Mes annonces — Smart Seller",
 };
 
 type PageProps = {
@@ -48,32 +49,62 @@ async function AdsList({
   });
 
   if (ads.length === 0) {
+    const filtered = Boolean(searchParams.search || searchParams.group);
     return (
       <EmptyState
-        title="Aucune annonce"
-        description="Créez votre première annonce pour commencer à vendre sur eBay."
-        actionLabel="Créer une annonce"
-        actionHref="/dashboard/creer"
+        title={filtered ? "Aucune annonce trouvée" : "Aucune annonce"}
+        description={
+          filtered
+            ? "Essayez une autre recherche ou affichez toutes vos annonces."
+            : "Créez votre première annonce pour commencer à vendre sur eBay."
+        }
+        actionLabel={filtered ? "Voir toutes les annonces" : "Créer une annonce"}
+        actionHref={filtered ? "/dashboard/annonces" : "/dashboard/creer"}
       />
     );
+  }
+
+  const { data: imageRows } = await supabase
+    .from("ad_images")
+    .select("ad_id, url, ordre, est_principale")
+    .eq("user_id", user.id)
+    .in(
+      "ad_id",
+      ads.map((ad) => ad.id),
+    )
+    .order("ordre", { ascending: true });
+
+  const imageByAd = new Map<string, string>();
+  for (const image of imageRows ?? []) {
+    if (image.est_principale || !imageByAd.has(image.ad_id)) {
+      imageByAd.set(image.ad_id, image.url);
+    }
   }
 
   return (
     <>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {ads.map((ad) => (
-          <AdCard
-            key={ad.id}
-            id={ad.id}
-            title={ad.titre ?? "Sans titre"}
-            price={ad.prix_vente ? `${ad.prix_vente} €` : undefined}
-            status={toBadgeStatus(ad.statut)}
-            updatedAt={format(new Date(ad.updated_at), "d MMM yyyy", {
-              locale: fr,
-            })}
-            href={`/dashboard/annonces/${ad.id}`}
-          />
-        ))}
+        {ads.map((ad) => {
+          const metadata =
+            ad.metadata && typeof ad.metadata === "object"
+              ? (ad.metadata as { images?: string[] })
+              : null;
+          return (
+            <AdCard
+              key={ad.id}
+              id={ad.id}
+              title={ad.titre ?? "Sans titre"}
+              price={ad.prix_vente ? `${ad.prix_vente} €` : undefined}
+              imageUrl={imageByAd.get(ad.id) ?? metadata?.images?.[0]}
+              status={toBadgeStatus(ad.statut)}
+              statusLabel={getStatusLabel(ad.statut)}
+              updatedAt={format(new Date(ad.updated_at), "d MMM yyyy", {
+                locale: fr,
+              })}
+              href={`/dashboard/annonces/${ad.id}`}
+            />
+          );
+        })}
       </div>
 
       {totalPages > 1 && (
@@ -102,7 +133,14 @@ function AdsSkeleton() {
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       {Array.from({ length: 8 }).map((_, i) => (
-        <Skeleton key={i} className="aspect-[4/3] rounded-xl" />
+        <div key={i} className="overflow-hidden rounded-xl border">
+          <Skeleton className="aspect-[4/3] rounded-none" />
+          <div className="space-y-3 p-4">
+            <Skeleton className="h-4 w-4/5" />
+            <Skeleton className="h-6 w-1/3" />
+            <Skeleton className="h-4 w-1/2" />
+          </div>
+        </div>
       ))}
     </div>
   );
@@ -113,20 +151,17 @@ export default async function AnnoncesPage({ searchParams }: PageProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-navy-900">Mes annonces</h1>
-          <p className="text-muted-foreground">
-            Gérez et publiez vos annonces eBay
-          </p>
-        </div>
+      <PageHeader
+        title="Mes annonces"
+        description="Retrouvez, complétez et publiez vos annonces."
+      >
         <Button asChild>
           <Link href="/dashboard/creer">
             <PlusCircle className="mr-2 h-4 w-4" />
             Nouvelle annonce
           </Link>
         </Button>
-      </div>
+      </PageHeader>
 
       <Suspense fallback={<Skeleton className="h-10 w-full max-w-md" />}>
         <AdFilters />

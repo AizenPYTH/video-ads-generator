@@ -11,10 +11,13 @@ export function createAdminClient() {
   }
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const serviceRoleKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
 
   if (!url || !serviceRoleKey) {
-    throw new Error("Missing Supabase admin environment variables");
+    throw new Error(
+      "Missing Supabase admin environment variables (SUPABASE_SERVICE_ROLE_KEY).",
+    );
   }
 
   /* eslint-disable @typescript-eslint/no-explicit-any */

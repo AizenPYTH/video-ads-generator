@@ -1,47 +1,22 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
 import { toast } from "sonner";
-import { Camera, Loader2, Upload, X } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-
-type UploadedPhoto = {
-  file: File;
-  preview: string;
-  url?: string;
-};
+import { ImageDropzone } from "@/components/uploads/image-dropzone";
 
 export function PhotoUploadFlow() {
   const router = useRouter();
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [photos, setPhotos] = useState<UploadedPhoto[]>([]);
+  const [photos, setPhotos] = useState<File[]>([]);
   const [notes, setNotes] = useState("");
   const [step, setStep] = useState<"upload" | "analyzing" | "done">("upload");
   const [progress, setProgress] = useState(0);
-
-  function handleFiles(files: FileList | null) {
-    if (!files) return;
-    const newPhotos = Array.from(files).map((file) => ({
-      file,
-      preview: URL.createObjectURL(file),
-    }));
-    setPhotos((prev) => [...prev, ...newPhotos].slice(0, 12));
-  }
-
-  function removePhoto(index: number) {
-    setPhotos((prev) => {
-      const next = [...prev];
-      URL.revokeObjectURL(next[index].preview);
-      next.splice(index, 1);
-      return next;
-    });
-  }
 
   async function handleAnalyze() {
     if (photos.length === 0) {
@@ -57,7 +32,7 @@ export function PhotoUploadFlow() {
 
       for (let i = 0; i < photos.length; i++) {
         const formData = new FormData();
-        formData.append("file", photos[i].file);
+        formData.append("file", photos[i]);
         formData.append("folder", "analysis");
 
         const uploadRes = await fetch("/api/upload", {
@@ -114,65 +89,18 @@ export function PhotoUploadFlow() {
         <CardHeader>
           <CardTitle>Analyser des photos</CardTitle>
           <CardDescription>
-            Ajoutez des photos de votre produit. SNOWOLF identifiera
+            Ajoutez des photos de votre produit. Smart Seller identifiera
             automatiquement marque, modèle et caractéristiques.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <input
-            ref={inputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            className="hidden"
-            onChange={(e) => handleFiles(e.target.files)}
+          <ImageDropzone
+            files={photos}
+            onFilesChange={setPhotos}
+            maxFiles={12}
+            disabled={step === "analyzing"}
+            label="Glissez vos photos ici"
           />
-
-          {photos.length === 0 ? (
-            <button
-              type="button"
-              onClick={() => inputRef.current?.click()}
-              className="flex w-full flex-col items-center justify-center rounded-xl border-2 border-dashed border-border bg-muted/30 px-6 py-16 transition-colors hover:border-glacier-300 hover:bg-muted/50"
-            >
-              <Camera className="mb-4 h-10 w-10 text-muted-foreground" />
-              <p className="font-medium">Glissez vos photos ici</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                ou cliquez pour parcourir (max. 12 photos)
-              </p>
-            </button>
-          ) : (
-            <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
-              {photos.map((photo, index) => (
-                <div
-                  key={photo.preview}
-                  className="relative aspect-square overflow-hidden rounded-lg border bg-muted"
-                >
-                  <Image
-                    src={photo.preview}
-                    alt={`Photo ${index + 1}`}
-                    fill
-                    className="object-cover"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removePhoto(index)}
-                    className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white hover:bg-black/80"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
-              {photos.length < 12 && (
-                <button
-                  type="button"
-                  onClick={() => inputRef.current?.click()}
-                  className="flex aspect-square items-center justify-center rounded-lg border-2 border-dashed border-border hover:border-glacier-300"
-                >
-                  <Upload className="h-6 w-6 text-muted-foreground" />
-                </button>
-              )}
-            </div>
-          )}
 
           <div className="space-y-2">
             <Label htmlFor="notes">Notes complémentaires (facultatif)</Label>
@@ -186,10 +114,15 @@ export function PhotoUploadFlow() {
           </div>
 
           {step === "analyzing" && (
-            <div className="space-y-2">
+            <div
+              className="space-y-2"
+              role="status"
+              aria-live="polite"
+              aria-busy="true"
+            >
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Analyse en cours...
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                Analyse en cours
               </div>
               <Progress value={progress} />
             </div>
@@ -202,8 +135,8 @@ export function PhotoUploadFlow() {
           >
             {step === "analyzing" ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Analyse en cours...
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                Analyse en cours
               </>
             ) : (
               "Lancer l'analyse"

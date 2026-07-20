@@ -1,47 +1,22 @@
+/**
+ * Génère les 4 modèles d'import eBay France (Smart Seller).
+ * Category ID volontairement vide dans les exemples → détection Taxonomy.
+ */
 import fs from "node:fs";
 import path from "node:path";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
+import {
+  EBAY_FR_COLUMNS,
+  COLUMN_INSTRUCTIONS,
+  DROPDOWN_ACTIONS,
+  DROPDOWN_FORMATS,
+  DROPDOWN_DURATIONS,
+  DROPDOWN_COUNTRIES,
+  DROPDOWN_CONDITIONS,
+  type EbayFrColumn,
+} from "../features/imports/columns";
 
-export const EBAY_FR_COLUMNS = [
-  "Action",
-  "Custom label (SKU)",
-  "Category ID",
-  "Category Name",
-  "Title",
-  "Subtitle",
-  "P:EAN",
-  "Start price",
-  "Quantity",
-  "Item photo URL",
-  "Condition ID",
-  "Condition description",
-  "Description",
-  "Format",
-  "Duration",
-  "Location",
-  "Country",
-  "Postal code",
-  "Shipping profile name",
-  "Return profile name",
-  "Payment profile name",
-  "Brand",
-  "Manufacturer",
-  "MPN",
-  "Model",
-  "Product type",
-  "Sold item name",
-  "Compatible brand",
-  "Compatible device",
-  "Compatible model number",
-  "Color",
-  "Material",
-  "Type",
-  "Unit quantity",
-  "Unit type",
-  "Item specifics",
-] as const;
-
-type TemplateRow = Record<(typeof EBAY_FR_COLUMNS)[number], string>;
+type TemplateRow = Record<EbayFrColumn, string>;
 
 function baseRow(overrides: Partial<TemplateRow>): TemplateRow {
   const row = Object.fromEntries(
@@ -64,6 +39,8 @@ function baseRow(overrides: Partial<TemplateRow>): TemplateRow {
     "Unit type": "Unité",
     "Condition ID": "3000",
     "Condition description": "Occasion",
+    // Category ID vide : détection auto eBay
+    "Category ID": "",
     ...overrides,
   };
 }
@@ -71,8 +48,7 @@ function baseRow(overrides: Partial<TemplateRow>): TemplateRow {
 export const EXAMPLE_PRODUCTS: TemplateRow[] = [
   baseRow({
     "Custom label (SKU)": "TEST-001",
-    "Category ID": "175673",
-    "Category Name": "Cartes mères",
+    "Category Name": "Cartes mères pour ordinateurs portables",
     Title: "Carte mère MacBook Pro 16 A2141 820-01779-A",
     "Start price": "189.99",
     Brand: "Apple",
@@ -93,8 +69,7 @@ export const EXAMPLE_PRODUCTS: TemplateRow[] = [
   }),
   baseRow({
     "Custom label (SKU)": "TEST-002",
-    "Category ID": "80053",
-    "Category Name": "Écrans LCD",
+    "Category Name": "Écrans LCD pour portables",
     Title: "Écran LCD MacBook Air 13 A2337 Remplacement",
     "Start price": "129.50",
     Brand: "Apple",
@@ -113,8 +88,7 @@ export const EXAMPLE_PRODUCTS: TemplateRow[] = [
   }),
   baseRow({
     "Custom label (SKU)": "TEST-003",
-    "Category ID": "176970",
-    "Category Name": "Batteries",
+    "Category Name": "Batteries pour portables",
     Title: "Batterie MacBook Pro 15 A1707 020-00977",
     "Start price": "59.00",
     Brand: "Apple",
@@ -132,8 +106,7 @@ export const EXAMPLE_PRODUCTS: TemplateRow[] = [
   }),
   baseRow({
     "Custom label (SKU)": "TEST-004",
-    "Category ID": "176970",
-    "Category Name": "Connecteurs",
+    "Category Name": "Connecteurs de charge",
     Title: "Connecteur port charge USB-C MacBook Pro A1990",
     "Start price": "24.90",
     Brand: "Apple",
@@ -151,7 +124,6 @@ export const EXAMPLE_PRODUCTS: TemplateRow[] = [
   }),
   baseRow({
     "Custom label (SKU)": "TEST-005",
-    "Category ID": "176970",
     "Category Name": "Nappes flex",
     Title: "Nappe flex trackpad MacBook Pro 13 A1708",
     "Start price": "14.50",
@@ -169,8 +141,7 @@ export const EXAMPLE_PRODUCTS: TemplateRow[] = [
   }),
   baseRow({
     "Custom label (SKU)": "TEST-006",
-    "Category ID": "176970",
-    "Category Name": "Caméras",
+    "Category Name": "Caméras portables",
     Title: "Caméra FaceTime MacBook Air A2179",
     "Start price": "19.99",
     Brand: "Apple",
@@ -187,8 +158,7 @@ export const EXAMPLE_PRODUCTS: TemplateRow[] = [
   }),
   baseRow({
     "Custom label (SKU)": "TEST-007",
-    "Category ID": "176970",
-    "Category Name": "Haut-parleurs",
+    "Category Name": "Haut-parleurs portables",
     Title: "Haut-parleurs MacBook Pro 16 A2141 paire",
     "Start price": "34.00",
     Brand: "Apple",
@@ -205,8 +175,7 @@ export const EXAMPLE_PRODUCTS: TemplateRow[] = [
   }),
   baseRow({
     "Custom label (SKU)": "TEST-008",
-    "Category ID": "176970",
-    "Category Name": "Claviers",
+    "Category Name": "Claviers portables",
     Title: "Clavier AZERTY MacBook Pro 14 A2442",
     "Start price": "89.00",
     Brand: "Apple",
@@ -224,7 +193,6 @@ export const EXAMPLE_PRODUCTS: TemplateRow[] = [
   }),
   baseRow({
     "Custom label (SKU)": "TEST-009",
-    "Category ID": "176970",
     "Category Name": "Trackpads",
     Title: "Trackpad Force Touch MacBook Pro 13 A2289",
     "Start price": "45.00",
@@ -243,8 +211,7 @@ export const EXAMPLE_PRODUCTS: TemplateRow[] = [
   }),
   baseRow({
     "Custom label (SKU)": "TEST-010",
-    "Category ID": "176970",
-    "Category Name": "Ventilateurs",
+    "Category Name": "Ventilateurs portables",
     Title: "Ventilateur gauche MacBook Pro 15 A1707",
     "Start price": "22.50",
     Brand: "Apple",
@@ -261,8 +228,7 @@ export const EXAMPLE_PRODUCTS: TemplateRow[] = [
   }),
   baseRow({
     "Custom label (SKU)": "TEST-011",
-    "Category ID": "176970",
-    "Category Name": "Chargeurs",
+    "Category Name": "Chargeurs portables",
     Title: "Chargeur USB-C 61W MacBook compatible",
     "Start price": "39.90",
     Brand: "Apple",
@@ -276,8 +242,7 @@ export const EXAMPLE_PRODUCTS: TemplateRow[] = [
   }),
   baseRow({
     "Custom label (SKU)": "TEST-012",
-    "Category ID": "176970",
-    "Category Name": "SSD",
+    "Category Name": "SSD / stockages",
     Title: "SSD NVMe 512Go MacBook Pro A1989",
     "Start price": "79.00",
     Brand: "Apple",
@@ -290,12 +255,11 @@ export const EXAMPLE_PRODUCTS: TemplateRow[] = [
     "Compatible model number": "A1989",
     Type: "SSD",
     "Item specifics": "Brand=Apple|Model=A1989|Type=SSD|Capacity=512GB",
-    Description: "SSD NVMe 512 Go souder pour MacBook Pro.",
+    Description: "SSD NVMe 512 Go pour MacBook Pro.",
   }),
   baseRow({
     "Custom label (SKU)": "TEST-013",
-    "Category ID": "176970",
-    "Category Name": "Cartes WiFi",
+    "Category Name": "Cartes Wi-Fi",
     Title: "Carte WiFi Bluetooth MacBook Air A1466",
     "Start price": "18.00",
     Brand: "Apple",
@@ -312,8 +276,7 @@ export const EXAMPLE_PRODUCTS: TemplateRow[] = [
   }),
   baseRow({
     "Custom label (SKU)": "TEST-014",
-    "Category ID": "176970",
-    "Category Name": "Coques",
+    "Category Name": "Coques / boîtiers",
     Title: "Boîtier inférieur MacBook Pro 13 A2251",
     "Start price": "49.00",
     Brand: "Apple",
@@ -332,8 +295,7 @@ export const EXAMPLE_PRODUCTS: TemplateRow[] = [
   }),
   baseRow({
     "Custom label (SKU)": "TEST-015",
-    "Category ID": "176970",
-    "Category Name": "Dissipateurs",
+    "Category Name": "Dissipateurs thermiques",
     Title: "Dissipateur thermique MacBook Pro 16 A2141",
     "Start price": "27.00",
     Brand: "Apple",
@@ -351,8 +313,7 @@ export const EXAMPLE_PRODUCTS: TemplateRow[] = [
   }),
   baseRow({
     "Custom label (SKU)": "TEST-016",
-    "Category ID": "175673",
-    "Category Name": "Cartes mères",
+    "Category Name": "Cartes mères pour ordinateurs portables",
     Title: "Carte mère MacBook Pro 13 A2159 820-01646-A",
     "Start price": "149.00",
     Brand: "Apple",
@@ -372,8 +333,7 @@ export const EXAMPLE_PRODUCTS: TemplateRow[] = [
   }),
   baseRow({
     "Custom label (SKU)": "TEST-017",
-    "Category ID": "80053",
-    "Category Name": "Écrans LCD",
+    "Category Name": "Écrans LCD pour portables",
     Title: "Écran complet MacBook Pro 14 A2442",
     "Start price": "299.00",
     Brand: "Apple",
@@ -390,8 +350,7 @@ export const EXAMPLE_PRODUCTS: TemplateRow[] = [
   }),
   baseRow({
     "Custom label (SKU)": "TEST-018",
-    "Category ID": "176970",
-    "Category Name": "Batteries",
+    "Category Name": "Batteries pour portables",
     Title: "Batterie MacBook Air M2 A2681",
     "Start price": "69.00",
     Brand: "Apple",
@@ -408,7 +367,6 @@ export const EXAMPLE_PRODUCTS: TemplateRow[] = [
   }),
   baseRow({
     "Custom label (SKU)": "TEST-019",
-    "Category ID": "176970",
     "Category Name": "Nappes flex",
     Title: "Nappe écran MAINFPC_V3.1 MacBook Pro 15",
     "Start price": "32.00",
@@ -426,8 +384,7 @@ export const EXAMPLE_PRODUCTS: TemplateRow[] = [
   }),
   baseRow({
     "Custom label (SKU)": "TEST-020",
-    "Category ID": "176970",
-    "Category Name": "Connecteurs",
+    "Category Name": "Connecteurs audio",
     Title: "Connecteur audio jack MacBook Pro M6100",
     "Start price": "16.50",
     Brand: "Apple",
@@ -445,32 +402,132 @@ export const EXAMPLE_PRODUCTS: TemplateRow[] = [
 ];
 
 function rowsToCsv(rows: TemplateRow[]): string {
-  const header = EBAY_FR_COLUMNS.join(",");
+  const header = EBAY_FR_COLUMNS.join(";");
   const body = rows
     .map((row) =>
       EBAY_FR_COLUMNS.map((col) => {
         const value = row[col] ?? "";
         const escaped = value.replace(/"/g, '""');
-        return value.includes(",") || value.includes('"') || value.includes("\n")
-          ? `"${escaped}"`
-          : escaped;
-      }).join(","),
+        return /[;"\n]/.test(value) ? `"${escaped}"` : escaped;
+      }).join(";"),
     )
     .join("\n");
 
-  return `${header}\n${body}\n`;
+  return `\uFEFF${header}\n${body}\n`;
 }
 
-function writeXlsx(filePath: string, rows: TemplateRow[]): void {
-  const worksheet = XLSX.utils.json_to_sheet(rows, {
-    header: [...EBAY_FR_COLUMNS],
+async function writeXlsx(filePath: string, rows: TemplateRow[]): Promise<void> {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Smart Seller";
+  workbook.created = new Date();
+
+  const sheet = workbook.addWorksheet("Annonces", {
+    views: [{ state: "frozen", ySplit: 1 }],
   });
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Import eBay");
-  XLSX.writeFile(workbook, filePath);
+
+  sheet.columns = EBAY_FR_COLUMNS.map((col) => ({
+    header: col,
+    key: col,
+    width: Math.min(28, Math.max(12, col.length + 4)),
+  }));
+
+  const headerRow = sheet.getRow(1);
+  headerRow.font = { bold: true };
+  headerRow.alignment = { vertical: "middle", wrapText: true };
+  sheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: 1, column: EBAY_FR_COLUMNS.length },
+  };
+
+  const textCols = new Set([
+    "Custom label (SKU)",
+    "P:EAN",
+    "MPN",
+    "Postal code",
+    "Category ID",
+    "Condition ID",
+  ]);
+
+  for (const data of rows) {
+    const values = EBAY_FR_COLUMNS.map((col) => data[col] ?? "");
+    const row = sheet.addRow(values);
+    EBAY_FR_COLUMNS.forEach((col, idx) => {
+      if (textCols.has(col)) {
+        const cell = row.getCell(idx + 1);
+        cell.numFmt = "@";
+        cell.value = String(data[col] ?? "");
+      }
+    });
+  }
+
+  // Listes déroulantes (feuille valeurs)
+  const valuesSheet = workbook.addWorksheet("Valeurs autorisées");
+  valuesSheet.getColumn(1).values = ["Action", ...DROPDOWN_ACTIONS];
+  valuesSheet.getColumn(2).values = ["Format", ...DROPDOWN_FORMATS];
+  valuesSheet.getColumn(3).values = ["Duration", ...DROPDOWN_DURATIONS];
+  valuesSheet.getColumn(4).values = ["Country", ...DROPDOWN_COUNTRIES];
+  valuesSheet.getColumn(5).values = [
+    "Condition ID",
+    ...DROPDOWN_CONDITIONS.map((c) => c.id),
+  ];
+  valuesSheet.getColumn(6).values = [
+    "Condition label",
+    ...DROPDOWN_CONDITIONS.map((c) => c.label),
+  ];
+
+  const colIndex = (name: EbayFrColumn) => EBAY_FR_COLUMNS.indexOf(name) + 1;
+  const lastDataRow = Math.max(rows.length + 1, 200);
+
+  const addList = (colName: EbayFrColumn, formula: string) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (sheet as any).dataValidations.add(
+      `${colLetter(colIndex(colName))}2:${colLetter(colIndex(colName))}${lastDataRow}`,
+      {
+        type: "list",
+        allowBlank: true,
+        formulae: [formula],
+        showErrorMessage: true,
+        errorTitle: "Valeur non autorisée",
+        error: "Choisissez une valeur de la liste.",
+      },
+    );
+  };
+
+  addList("Action", "'Valeurs autorisées'!$A$2:$A$5");
+  addList("Format", "'Valeurs autorisées'!$B$2:$B$3");
+  addList("Duration", "'Valeurs autorisées'!$C$2:$C$6");
+  addList("Country", "'Valeurs autorisées'!$D$2:$D$8");
+  addList("Condition ID", "'Valeurs autorisées'!$E$2:$E$6");
+
+  const instructions = workbook.addWorksheet("Instructions");
+  instructions.columns = [
+    { header: "Colonne", key: "column", width: 28 },
+    { header: "Description", key: "text", width: 90 },
+  ];
+  instructions.getRow(1).font = { bold: true };
+  for (const item of COLUMN_INSTRUCTIONS) {
+    instructions.addRow(item);
+  }
+  instructions.addRow({
+    column: "Rappel",
+    text: "Category ID est facultatif. Smart Seller détecte la catégorie via l'API eBay Taxonomy (EBAY_FR). Une ligne = une annonce. Aucune publication automatique.",
+  });
+
+  await workbook.xlsx.writeFile(filePath);
 }
 
-function main(): void {
+function colLetter(index: number): string {
+  let n = index;
+  let s = "";
+  while (n > 0) {
+    const m = (n - 1) % 26;
+    s = String.fromCharCode(65 + m) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
+async function main(): Promise<void> {
   const templatesDir = path.resolve(process.cwd(), "public", "templates");
   fs.mkdirSync(templatesDir, { recursive: true });
 
@@ -481,19 +538,30 @@ function main(): void {
     rowsToCsv([emptyTemplate]),
     "utf8",
   );
-  writeXlsx(path.join(templatesDir, "modele-import-ebay.xlsx"), [emptyTemplate]);
+  await writeXlsx(path.join(templatesDir, "modele-import-ebay.xlsx"), [
+    emptyTemplate,
+  ]);
 
   fs.writeFileSync(
     path.join(templatesDir, "exemple-import-ebay.csv"),
     rowsToCsv(EXAMPLE_PRODUCTS),
     "utf8",
   );
-  writeXlsx(
+  await writeXlsx(
     path.join(templatesDir, "exemple-import-ebay.xlsx"),
     EXAMPLE_PRODUCTS,
   );
 
-  console.log(`Generated 4 template files in ${templatesDir}`);
+  // Alias demandé dans le brief
+  fs.copyFileSync(
+    path.join(templatesDir, "exemple-import-ebay.xlsx"),
+    path.join(templatesDir, "modele-ebay-france-20-produits.xlsx"),
+  );
+
+  console.log(`Generated template files in ${templatesDir}`);
 }
 
-main();
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

@@ -7,56 +7,129 @@ import { createClient } from "@/lib/supabase/server";
 export type AuthActionResult = {
   error?: string;
   success?: boolean;
+  redirectTo?: string;
 };
 
 export async function signUp(formData: FormData): Promise<AuthActionResult> {
-  const email = formData.get("email") as string;
-  const password = formData.get("password") as string;
-  const fullName = formData.get("fullName") as string;
+  try {
+    const email = formData.get("email") as string;
+    const password = formData.get("password") as string;
+    const fullName = formData.get("fullName") as string;
 
-  if (!email || !password) {
-    return { error: "L'email et le mot de passe sont requis." };
+    if (!email || !password) {
+      return { error: "L'email et le mot de passe sont requis." };
+    }
+
+    const supabase = await createClient();
+    const appUrl =
+      process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
+      (process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : "http://localhost:3000");
+
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { full_name: fullName },
+        emailRedirectTo: `${appUrl}/auth/callback`,
+      },
+    });
+
+    if (error) {
+      return { error: translateAuthError(error.message) };
+    }
+
+    // Les emails Supabase (plan free) arrivent souvent en retard / spam.
+    // On confirme le compte côté serveur puis on connecte directement.
+    if (data.user && !data.session) {
+      try {
+        const { createAdminClient } = await import("@/lib/supabase/admin");
+        const admin = createAdminClient();
+        await admin.auth.admin.updateUserById(data.user.id, {
+          email_confirm: true,
+        });
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+  if (!signInError) {
+        revalidatePath("/", "layout");
+        return { success: true, redirectTo: "/dashboard" };
+      }
+    } catch {
+      // fallback: page de vérification
+    }
   }
 
-  const supabase = await createClient();
-
-  const { error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: { full_name: fullName },
-      emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? ""}/auth/callback`,
-    },
-  });
-
-  if (error) {
-    return { error: translateAuthError(error.message) };
+  if (data.session) {
+    revalidatePath("/", "layout");
+    try {
+      const { ensureFreeSubscription } = await import(
+        "@/lib/billing/ensure-subscription"
+      );
+      await ensureFreeSubscription(data.session.user.id);
+    } catch {
+      // non bloquant
+    }
+    return { success: true, redirectTo: "/dashboard" };
   }
 
-  redirect("/verify-email");
+  return { success: true, redirectTo: "/verify-email" };
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error
+          ? err.message
+          : "Impossible de créer le compte pour le moment.",
+    };
+  }
 }
 
 export async function signIn(formData: FormData): Promise<AuthActionResult> {
-  const email = formData.get("email") as string;
-  const password = formData.get("password") as string;
+  try {
+    const email = formData.get("email") as string;
+    const password = formData.get("password") as string;
 
-  if (!email || !password) {
-    return { error: "L'email et le mot de passe sont requis." };
+    if (!email || !password) {
+      return { error: "L'email et le mot de passe sont requis." };
+    }
+
+    const supabase = await createClient();
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      return { error: translateAuthError(error.message) };
+    }
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user) {
+        const { ensureFreeSubscription } = await import(
+          "@/lib/billing/ensure-subscription"
+        );
+        await ensureFreeSubscription(user.id);
+      }
+    } catch {
+      // non bloquant à la connexion
+    }
+
+    revalidatePath("/", "layout");
+    return { success: true, redirectTo: "/dashboard" };
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error
+          ? err.message
+          : "Impossible de se connecter pour le moment.",
+    };
   }
-
-  const supabase = await createClient();
-
-  const { error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
-
-  if (error) {
-    return { error: translateAuthError(error.message) };
-  }
-
-  revalidatePath("/", "layout");
-  redirect("/dashboard");
 }
 
 export async function signOut(): Promise<void> {

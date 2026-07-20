@@ -29,7 +29,10 @@ function buildIdentificationPrompt(
 ): string {
   return [
     "You are an expert product identification assistant for eBay France sellers.",
-    "Analyze the provided OCR text, reference numbers, web search results, and seller notes.",
+    "You may receive a product photo AND OCR text. CRITICAL RULE:",
+    "Explicit OCR text always takes priority over visual guesswork when they conflict.",
+    "Use the image to confirm layout, logos, and context; never invent part numbers that contradict OCR.",
+    "Analyze OCR text, reference numbers, web search results, seller notes, and the image if provided.",
     "Return a JSON object matching this exact schema:",
     JSON.stringify({
       soldItem: {
@@ -68,7 +71,7 @@ function buildIdentificationPrompt(
       needsReview: "boolean",
     }),
     "",
-    `OCR text:\n${ocrText}`,
+    `OCR text (PRIORITY):\n${ocrText || "(empty)"}`,
     reference ? `Best reference found: ${reference}` : "",
     serpContext ? `Web search context:\n${serpContext}` : "",
     notes ? `Seller notes: ${notes}` : "",
@@ -125,10 +128,23 @@ async function runOpenAIIdentification(
   reference: string | null,
   serpContext: string,
   notes?: string,
+  imageUrl?: string | null,
 ): Promise<IdentificationResult> {
   const client = getOpenAIClient();
   const model = getOpenAIModel();
   const prompt = buildIdentificationPrompt(ocrText, reference, serpContext, notes);
+
+  const userContent: Array<
+    | { type: "text"; text: string }
+    | { type: "image_url"; image_url: { url: string } }
+  > = [{ type: "text", text: prompt }];
+
+  if (imageUrl) {
+    userContent.push({
+      type: "image_url",
+      image_url: { url: imageUrl },
+    });
+  }
 
   const response = await client.chat.completions.create({
     model,
@@ -136,9 +152,9 @@ async function runOpenAIIdentification(
       {
         role: "system",
         content:
-          "Respond only with valid JSON matching the requested schema. No markdown fences.",
+          "Respond only with valid JSON matching the requested schema. No markdown fences. OCR text overrides visual guesses when they conflict.",
       },
-      { role: "user", content: prompt },
+      { role: "user", content: userContent },
     ],
     response_format: { type: "json_object" },
     temperature: 0.2,
@@ -202,6 +218,7 @@ export async function runPhotoAnalysisPipeline(
       reference,
       serpContext,
       input.notes,
+      input.photoUrls[0],
     );
 
     const coherence = validateCoherence({
@@ -252,11 +269,109 @@ export async function runPhotoAnalysisPipeline(
       .eq("id", analysisRun.id);
 
     if (input.adId) {
+      let ebayCategoryId: string | null = null;
+      let categoryMeta: Record<string, unknown> = {};
+      let categoryConfidence: number | null = null;
+      let categoryStatus: string | null = null;
+
+      try {
+        const { resolveCategoryForRow } = await import(
+          "@/features/imports/category-resolve"
+        );
+        const titre = [
+          result.soldItem?.type,
+          result.brand,
+          result.model,
+          result.partNumber,
+          result.compatibility?.device,
+          result.compatibility?.modelNumber,
+        ]
+          .filter(Boolean)
+          .join(" ");
+        const resolution = await resolveCategoryForRow({
+          titre:
+            titre ||
+            [result.brand, result.model, result.partNumber]
+              .filter(Boolean)
+              .join(" "),
+          brand: result.brand,
+          model: result.model,
+          mpn: result.partNumber,
+          product_type: result.soldItem?.type ?? result.category,
+          type: result.soldItem?.type ?? null,
+          category_name: result.category,
+          compatible_device:
+            result.compatibility?.device ??
+            result.compatibility?.modelNumber ??
+            null,
+          item_specifics: {
+            ...(result.brand ? { Brand: result.brand } : {}),
+            ...(result.model ? { Model: result.model } : {}),
+            ...(result.partNumber ? { MPN: result.partNumber } : {}),
+            ...(result.soldItem?.type ? { Type: result.soldItem.type } : {}),
+          },
+        });
+        ebayCategoryId = resolution.categoryId;
+        categoryConfidence = resolution.confidence;
+        categoryStatus = resolution.status;
+        categoryMeta = {
+          category_resolution: resolution,
+          category_name: resolution.categoryName,
+          root_category_name: resolution.rootCategoryName,
+          subcategory_name: resolution.subcategoryName,
+        };
+      } catch (categoryError) {
+        console.error(
+          "[photo-analysis] category resolve failed",
+          categoryError instanceof Error
+            ? categoryError.message
+            : categoryError,
+        );
+        categoryStatus = "needs_review";
+      }
+
+      const { data: existingAd } = await supabase
+        .from("ads")
+        .select("metadata, titre, description, prix_vente, quantite, sku, ebay_condition_id")
+        .eq("id", input.adId)
+        .eq("user_id", input.userId)
+        .maybeSingle();
+
+      const prevMeta =
+        existingAd?.metadata && typeof existingAd.metadata === "object"
+          ? (existingAd.metadata as Record<string, unknown>)
+          : {};
+
+      const { recalculateAdStatus } = await import(
+        "@/features/ads/recalculate-status"
+      );
+      const statut = result.needsReview
+        ? "NEEDS_REVIEW"
+        : recalculateAdStatus({
+            titre: existingAd?.titre,
+            description: existingAd?.description,
+            prix_vente: existingAd?.prix_vente,
+            quantite: existingAd?.quantite,
+            sku: existingAd?.sku,
+            ebay_condition_id: existingAd?.ebay_condition_id
+              ? String(existingAd.ebay_condition_id)
+              : null,
+            ebay_category_id: ebayCategoryId,
+            categoryStatus,
+            categoryAmbiguous: categoryStatus === "needs_review",
+            categoryConfidence,
+          });
+
       await supabase
         .from("ads")
         .update({
           resultat_identification: result,
-          statut: result.needsReview ? "NEEDS_REVIEW" : "READY",
+          ebay_category_id: ebayCategoryId,
+          statut,
+          metadata: {
+            ...prevMeta,
+            ...categoryMeta,
+          },
           updated_at: new Date().toISOString(),
         })
         .eq("id", input.adId)

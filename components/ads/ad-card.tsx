@@ -1,19 +1,12 @@
 import Image from "next/image";
 import Link from "next/link";
-import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { ArrowRight, ImageIcon } from "lucide-react";
 import {
   Card,
   CardContent,
   CardFooter,
-  CardHeader,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { StatusBadge, type AdStatus } from "@/components/ads/status-badge";
 
 export interface AdCardProps {
@@ -22,6 +15,7 @@ export interface AdCardProps {
   price?: string;
   imageUrl?: string;
   status: AdStatus;
+  statusLabel?: string;
   updatedAt?: string;
   href?: string;
 }
@@ -32,13 +26,14 @@ export function AdCard({
   price,
   imageUrl,
   status,
+  statusLabel,
   updatedAt,
   href,
 }: AdCardProps) {
   const cardHref = href ?? `/dashboard/annonces/${id}`;
 
   return (
-    <Card className="group overflow-hidden transition-shadow hover:shadow-md">
+    <Card className="group overflow-hidden border-border/80 bg-card shadow-xs transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md">
       <Link href={cardHref}>
         <div className="relative aspect-[4/3] overflow-hidden bg-muted">
           {imageUrl ? (
@@ -49,58 +44,43 @@ export function AdCard({
               className="object-cover transition-transform group-hover:scale-105"
             />
           ) : (
-            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+            <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+              <ImageIcon className="h-6 w-6" />
               Aucune image
             </div>
           )}
           <div className="absolute left-3 top-3">
-            <StatusBadge status={status} />
+            <StatusBadge status={status} label={statusLabel} />
           </div>
         </div>
       </Link>
 
-      <CardHeader className="p-4 pb-2">
-        <div className="flex items-start justify-between gap-2">
-          <Link href={cardHref} className="flex-1">
-            <h3 className="line-clamp-2 font-medium leading-snug hover:text-primary">
-              {title}
-            </h3>
-          </Link>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem asChild>
-                <Link href={cardHref}>
-                  <Pencil className="mr-2 h-4 w-4" />
-                  Modifier
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem className="text-destructive focus:text-destructive">
-                <Trash2 className="mr-2 h-4 w-4" />
-                Supprimer
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </CardHeader>
-
-      <CardContent className="px-4 pb-2">
+      <CardContent className="space-y-3 p-4">
+        <Link href={cardHref}>
+          <h3 className="line-clamp-2 min-h-10 font-semibold leading-snug transition-colors hover:text-primary">
+            {title}
+          </h3>
+        </Link>
         {price && (
-          <p className="text-lg font-semibold text-navy-900">{price}</p>
+          <p className="text-lg font-bold tracking-tight text-foreground">{price}</p>
         )}
       </CardContent>
 
-      {updatedAt && (
-        <CardFooter className="px-4 pb-4 pt-0">
+      <CardFooter className="flex items-center justify-between gap-3 px-4 pb-4 pt-0">
+        {updatedAt ? (
           <p className="text-xs text-muted-foreground">
             Modifié le {updatedAt}
           </p>
-        </CardFooter>
-      )}
+        ) : (
+          <span />
+        )}
+        <Button variant="ghost" size="sm" asChild className="-mr-2">
+          <Link href={cardHref}>
+            Modifier
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </Button>
+      </CardFooter>
     </Card>
   );
 }

@@ -1,28 +1,62 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { AppError } from "@/lib/errors/app-error";
 import { encrypt } from "@/lib/crypto/encryption";
 import {
   exchangeAuthorizationCode,
+  hashState,
   parseOAuthState,
 } from "@/services/ebay/oauth";
 import { isEbayMockMode } from "@/services/ebay/client";
 import { ebayOAuthCallbackSchema } from "@/lib/validation/schemas";
 
+const OAUTH_STATE_COOKIE = "ebay_oauth_state";
+
+function getAppUrl(request: Request): string {
+  // Toujours privilégier l'origine réelle de la requête OAuth
+  // (évite les placeholders type ton-domaine-vercel.vercel.app).
+  const origin = new URL(request.url).origin;
+  if (origin && !origin.includes("localhost")) {
+    return origin;
+  }
+
+  const configured = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
+  if (configured && !configured.includes("localhost")) {
+    return configured;
+  }
+
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL.replace(/\/$/, "")}`;
+  }
+
+  return configured ?? "http://localhost:3000";
+}
+
+function redirectToEbay(
+  appUrl: string,
+  params: Record<string, string>,
+): NextResponse {
+  const url = new URL("/ebay", appUrl);
+  for (const [key, value] of Object.entries(params)) {
+    url.searchParams.set(key, value);
+  }
+  return NextResponse.redirect(url);
+}
+
 export async function GET(request: Request) {
+  const appUrl = getAppUrl(request);
+  const cookieStore = await cookies();
+
   try {
     const url = new URL(request.url);
     const code = url.searchParams.get("code");
     const state = url.searchParams.get("state");
     const errorParam = url.searchParams.get("error");
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-    const redirectBase = `${appUrl}/dashboard/ebay`;
-
     if (errorParam) {
-      return NextResponse.redirect(
-        `${redirectBase}?error=${encodeURIComponent(errorParam)}`,
-      );
+      cookieStore.delete(OAUTH_STATE_COOKIE);
+      return redirectToEbay(appUrl, { error: errorParam });
     }
 
     if (!code || !state) {
@@ -30,7 +64,14 @@ export async function GET(request: Request) {
     }
 
     ebayOAuthCallbackSchema.parse({ code, state });
+
+    const expectedHash = cookieStore.get(OAUTH_STATE_COOKIE)?.value;
+    if (!expectedHash || expectedHash !== hashState(state)) {
+      throw AppError.validation("État OAuth invalide ou expiré.");
+    }
+
     const { workspaceId: userId } = parseOAuthState(state);
+    cookieStore.delete(OAUTH_STATE_COOKIE);
 
     const tokens = await exchangeAuthorizationCode(code);
     const supabase = await createClient();
@@ -62,7 +103,10 @@ export async function GET(request: Request) {
         .single();
 
       if (accountError || !newAccount) {
-        throw AppError.internal("Impossible de créer le compte eBay.", accountError);
+        throw AppError.internal(
+          "Impossible de créer le compte eBay.",
+          accountError,
+        );
       }
       accountId = newAccount.id;
     } else {
@@ -87,19 +131,19 @@ export async function GET(request: Request) {
     );
 
     if (tokenError) {
-      throw AppError.internal("Impossible d'enregistrer les jetons eBay.", tokenError);
+      throw AppError.internal(
+        "Impossible d'enregistrer les jetons eBay.",
+        tokenError,
+      );
     }
 
-    return NextResponse.redirect(`${redirectBase}?connected=true`);
+    return redirectToEbay(appUrl, { connected: "true" });
   } catch (error) {
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
     const message =
       error instanceof AppError
         ? error.message
         : "Erreur lors de la connexion eBay.";
 
-    return NextResponse.redirect(
-      `${appUrl}/dashboard/ebay?error=${encodeURIComponent(message)}`,
-    );
+    return redirectToEbay(appUrl, { error: message });
   }
 }

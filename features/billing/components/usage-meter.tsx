@@ -14,18 +14,19 @@ export function UsageMeter({ label, used, limit }: UsageMeterProps) {
   const isNearLimit = percent >= 80;
 
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">{label}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        <div className="flex justify-between text-sm">
-          <span className={isNearLimit ? "text-amber-600" : "text-muted-foreground"}>
-            {used} / {limit}
-          </span>
-          <span className="text-muted-foreground">{percent}%</span>
+    <Card className={isNearLimit ? "border-amber-300/70" : undefined}>
+      <CardHeader className="pb-3">
+        <div className="flex items-baseline justify-between gap-3">
+          <CardTitle className="text-sm font-medium">{label}</CardTitle>
+          <span className="text-xs font-medium text-muted-foreground">{percent} %</span>
         </div>
-        <Progress value={percent} />
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <Progress value={percent} aria-label={`${label} : ${percent} % utilisé`} />
+        <p className={isNearLimit ? "text-sm text-amber-700" : "text-sm text-muted-foreground"}>
+          <span className="font-semibold text-foreground">{used}</span> utilisé
+          {limit > 0 ? ` sur ${limit}` : ""}
+        </p>
       </CardContent>
     </Card>
   );
@@ -37,7 +38,7 @@ type UsageMetersProps = {
 
 export function UsageMeters({ quotas }: UsageMetersProps) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       {quotas.map((q) => (
         <UsageMeter key={q.label} label={q.label} used={q.used} limit={q.limit} />
       ))}

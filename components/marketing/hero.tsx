@@ -1,55 +1,69 @@
 import Link from "next/link";
-import { ArrowRight, Sparkles, Zap } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { HeroCarousel } from "@/components/marketing/hero-carousel";
+import { APP_NAME, BRAND_HERO_PATH } from "@/lib/brand";
 
 export function Hero() {
   return (
-    <section className="relative overflow-hidden bg-navy-900 px-6 py-24 text-white sm:py-32">
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-navy-700/50 via-transparent to-transparent" />
-      <div className="relative mx-auto max-w-5xl text-center">
-        <Badge variant="glacier" className="mb-6">
-          <Sparkles className="mr-1 h-3 w-3" />
-          Propulsé par l&apos;IA
-        </Badge>
+    <section className="relative overflow-hidden bg-gradient-to-b from-slate-50 to-white px-4 pb-20 pt-14 text-slate-900 sm:px-6 sm:pb-28 sm:pt-20">
+      <div
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_80%_0%,rgba(56,189,248,0.18),transparent_45%)]"
+        aria-hidden="true"
+      />
 
-        <h1 className="text-4xl font-bold tracking-tight sm:text-6xl">
-          Créez des annonces eBay{" "}
-          <span className="text-glacier-300">intelligentes</span>
-        </h1>
+      <div className="relative mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-[1fr_1.05fr] lg:gap-14">
+        <div className="text-center lg:text-left">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600">
+            {APP_NAME} · eBay France
+          </p>
 
-        <p className="mx-auto mt-6 max-w-2xl text-lg text-white/70">
-          SNOWOLF analyse vos produits, génère des descriptions optimisées et
-          publie vos annonces en quelques clics. Gagnez du temps, vendez plus.
-        </p>
+          <h1 className="mt-5 text-4xl font-bold tracking-[-0.03em] sm:text-5xl lg:text-[3.25rem] lg:leading-[1.08]">
+            Vos produits.
+            <br />
+            <span className="bg-gradient-to-r from-blue-700 to-sky-500 bg-clip-text text-transparent">
+              Des annonces prêtes
+            </span>
+            <br />
+            à publier.
+          </h1>
 
-        <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-          <Button size="lg" asChild className="bg-glacier-300 text-navy-900 hover:bg-glacier-300/90">
-            <Link href="/signup">
-              Commencer gratuitement
-              <ArrowRight className="ml-2 h-4 w-4" />
-            </Link>
-          </Button>
-          <Button size="lg" variant="outline" asChild className="border-white/20 text-white hover:bg-white/10">
-            <Link href="/login">Se connecter</Link>
-          </Button>
+          <p className="mx-auto mt-6 max-w-xl text-base leading-7 text-slate-600 sm:text-lg lg:mx-0">
+            Photo, fichier ou lien produit : {APP_NAME} prépare vos fiches eBay
+            et vous aide à publier plus vite.
+          </p>
+
+          <div className="mt-9 flex flex-col items-center gap-3 sm:flex-row lg:justify-start">
+            <Button size="lg" asChild className="w-full sm:w-auto">
+              <Link href="/signup">
+                Créer un compte
+                <ArrowRight className="ml-1" aria-hidden="true" />
+              </Link>
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              asChild
+              className="w-full sm:w-auto"
+            >
+              <Link href="/login">J’ai déjà un compte</Link>
+            </Button>
+          </div>
         </div>
 
-        <div className="mt-16 grid grid-cols-1 gap-6 sm:grid-cols-3">
-          {[
-            { icon: Zap, label: "Analyse IA", desc: "Identification automatique" },
-            { icon: Sparkles, label: "Descriptions", desc: "Optimisées pour eBay" },
-            { icon: ArrowRight, label: "Publication", desc: "En un clic" },
-          ].map((feature) => (
-            <div
-              key={feature.label}
-              className="rounded-xl border border-white/10 bg-white/5 p-6 backdrop-blur-sm"
-            >
-              <feature.icon className="mb-3 h-6 w-6 text-glacier-300" />
-              <h3 className="font-semibold">{feature.label}</h3>
-              <p className="mt-1 text-sm text-white/60">{feature.desc}</p>
-            </div>
-          ))}
+        <div className="relative mx-auto w-full max-w-xl">
+          <div
+            className="absolute -inset-6 rounded-[2rem] bg-sky-400/15 blur-3xl"
+            aria-hidden="true"
+          />
+          <HeroCarousel
+            slides={[
+              {
+                src: BRAND_HERO_PATH,
+                alt: `Tableau de bord ${APP_NAME}`,
+              },
+            ]}
+          />
         </div>
       </div>
     </section>

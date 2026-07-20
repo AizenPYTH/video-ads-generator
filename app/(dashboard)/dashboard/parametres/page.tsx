@@ -4,11 +4,19 @@ import { ProfileForm } from "@/features/settings/components/profile-form";
 import { PreferencesForm } from "@/features/settings/components/preferences-form";
 import { NotificationForm } from "@/features/settings/components/notification-form";
 import { MarketingSettings } from "@/features/settings/components/marketing-settings";
+import { PageHeader } from "@/components/layout/page-header";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export const metadata = {
-  title: "Paramètres — SNOWOLF",
+  title: "Paramètres — Smart Seller",
 };
 
 async function SettingsContent() {
@@ -36,27 +44,69 @@ async function SettingsContent() {
 
   return (
     <Tabs defaultValue="profil" className="space-y-6">
-      <TabsList>
-        <TabsTrigger value="profil">Profil</TabsTrigger>
-        <TabsTrigger value="preferences">Préférences</TabsTrigger>
-        <TabsTrigger value="notifications">Notifications</TabsTrigger>
-        <TabsTrigger value="marketing">Images marketing</TabsTrigger>
-      </TabsList>
+      <div className="-mx-4 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0">
+        <TabsList className="w-max min-w-full justify-start sm:w-full">
+          <TabsTrigger value="profil">Profil</TabsTrigger>
+          <TabsTrigger value="preferences">Préférences</TabsTrigger>
+          <TabsTrigger value="notifications">Notifications</TabsTrigger>
+          <TabsTrigger value="marketing">Images marketing</TabsTrigger>
+        </TabsList>
+      </div>
 
       <TabsContent value="profil">
-        <ProfileForm profile={profileRes.data} />
+        <Card>
+          <CardHeader>
+            <CardTitle>Informations personnelles</CardTitle>
+            <CardDescription>
+              Personnalisez votre identité et vos réglages régionaux.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ProfileForm profile={profileRes.data} />
+          </CardContent>
+        </Card>
       </TabsContent>
 
       <TabsContent value="preferences">
-        <PreferencesForm settings={settingsRes.data} />
+        <Card>
+          <CardHeader>
+            <CardTitle>Préférences générales</CardTitle>
+            <CardDescription>
+              Choisissez la devise et le marché utilisés par défaut.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <PreferencesForm settings={settingsRes.data} />
+          </CardContent>
+        </Card>
       </TabsContent>
 
       <TabsContent value="notifications">
-        <NotificationForm settings={notifRes.data} />
+        <Card>
+          <CardHeader>
+            <CardTitle>Notifications par e-mail</CardTitle>
+            <CardDescription>
+              Sélectionnez les événements pour lesquels vous souhaitez être averti.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <NotificationForm settings={notifRes.data} />
+          </CardContent>
+        </Card>
       </TabsContent>
 
       <TabsContent value="marketing">
-        <MarketingSettings template={templatesRes.data?.[0] ?? null} />
+        <Card>
+          <CardHeader>
+            <CardTitle>Images marketing</CardTitle>
+            <CardDescription>
+              Configurez l’identité visuelle appliquée à vos supports.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <MarketingSettings template={templatesRes.data?.[0] ?? null} />
+          </CardContent>
+        </Card>
       </TabsContent>
     </Tabs>
   );
@@ -64,15 +114,20 @@ async function SettingsContent() {
 
 export default function ParametresPage() {
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-navy-900">Paramètres</h1>
-        <p className="text-muted-foreground">
-          Gérez votre compte et vos préférences
-        </p>
-      </div>
+    <div className="mx-auto max-w-3xl space-y-6">
+      <PageHeader
+        title="Paramètres"
+        description="Gérez votre profil, vos préférences et vos notifications."
+      />
 
-      <Suspense fallback={<Skeleton className="h-96 rounded-xl" />}>
+      <Suspense
+        fallback={
+          <div className="space-y-4" aria-label="Chargement des paramètres">
+            <Skeleton className="h-11 rounded-lg" />
+            <Skeleton className="h-96 rounded-xl" />
+          </div>
+        }
+      >
         <SettingsContent />
       </Suspense>
     </div>

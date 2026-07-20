@@ -1,20 +1,15 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Pencil } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { fetchAdById } from "@/features/ads/queries";
+import { fetchAdById, fetchAdImages } from "@/features/ads/queries";
 import { validateAdForPublish } from "@/features/ads/validation";
-import { getStatusLabel } from "@/features/ads/status";
-import { PublishDialog } from "@/features/ads/components/publish-dialog";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
+import { AdDetailEditor } from "@/features/ads/components/ad-detail-editor";
+import { ensureRemoteImagesOnAd } from "@/features/ads/ensure-ad-images";
+import { dedupeImageUrls } from "@/lib/images/dedupe";
 import type { IdentificationResult } from "@/types/identification";
 import type { Ad } from "@/types/ads";
 
 export const metadata = {
-  title: "Détail annonce — SNOWOLF",
+  title: "Détail annonce — Smart Seller",
 };
 
 type PageProps = {
@@ -33,13 +28,90 @@ export default async function AnnonceDetailPage({ params }: PageProps) {
   const ad = await fetchAdById(user.id, id);
   if (!ad) notFound();
 
+  let dbImages = await fetchAdImages(user.id, id);
+
+  // Réparer les imports où les images n'étaient que dans metadata
+  if (
+    dbImages.length === 0 &&
+    ad.metadata &&
+    typeof ad.metadata === "object"
+  ) {
+    const metaImages =
+      (ad.metadata as { images?: string[] }).images?.filter(Boolean) ?? [];
+    if (metaImages.length > 0) {
+      const ensure = await ensureRemoteImagesOnAd({
+        userId: user.id,
+        adId: id,
+        urls: metaImages,
+        replace: true,
+      });
+      console.info("[annonce-detail] promoted metadata images", {
+        adId: id,
+        hosted: ensure.hosted.length,
+        errors: ensure.errors.slice(0, 3),
+      });
+      if (ensure.hosted.length > 0) {
+        await supabase
+          .from("ads")
+          .update({
+            metadata: {
+              ...(ad.metadata as Record<string, unknown>),
+              images: ensure.hosted.map((h) => h.url),
+            },
+          })
+          .eq("id", id)
+          .eq("user_id", user.id);
+        dbImages = await fetchAdImages(user.id, id);
+      }
+    }
+  }
+
+  const uniqueDb = dedupeImageUrls(
+    dbImages.map((i) => i.url),
+    { max: 12 },
+  );
+  const byNorm = new Map(
+    uniqueDb.map((u) => [u.normalizedKey, u.url] as const),
+  );
+  const seenKeys = new Set<string>();
+  let images = dbImages.filter((img) => {
+    const key = [...byNorm.entries()].find(([, url]) => url === img.url)?.[0];
+    const k =
+      key ??
+      dedupeImageUrls([img.url])[0]?.normalizedKey ??
+      img.url;
+    if (seenKeys.has(k)) return false;
+    seenKeys.add(k);
+    return true;
+  });
+
+  if (images.length) {
+    const hasPrimary = images.some((i) => i.est_principale);
+    if (!hasPrimary) {
+      images = images.map((i, idx) => ({
+        ...i,
+        est_principale: idx === 0,
+      }));
+    } else {
+      let found = false;
+      images = images.map((i) => {
+        if (i.est_principale && !found) {
+          found = true;
+          return i;
+        }
+        return { ...i, est_principale: false };
+      });
+    }
+  }
+
   const validation = validateAdForPublish({
     id: ad.id,
     user_id: ad.user_id,
     titre: ad.titre,
     description: ad.description,
     statut: ad.statut,
-    resultat_identification: ad.resultat_identification as IdentificationResult | null,
+    resultat_identification:
+      ad.resultat_identification as IdentificationResult | null,
     prix_achat: ad.prix_achat,
     prix_vente: ad.prix_vente,
     quantite: ad.quantite,
@@ -49,119 +121,55 @@ export default async function AnnonceDetailPage({ params }: PageProps) {
     notes: ad.notes,
   } satisfies Ad);
 
-  const identification = ad.resultat_identification as IdentificationResult | null;
+  const meta =
+    ad.metadata && typeof ad.metadata === "object"
+      ? (ad.metadata as Record<string, unknown>)
+      : {};
+
+  const resolution =
+    meta.category_resolution && typeof meta.category_resolution === "object"
+      ? (meta.category_resolution as {
+          status?: string;
+          categoryId?: string | null;
+          categoryName?: string | null;
+          rootCategoryName?: string | null;
+          subcategoryName?: string | null;
+          categoryPath?: string[];
+          confidence?: number;
+          message?: string;
+          alternatives?: Array<{
+            categoryId: string;
+            categoryName: string;
+            confidence: number;
+          }>;
+        })
+      : null;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <Button variant="ghost" size="sm" asChild>
-          <Link href="/dashboard/annonces">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Mes annonces
-          </Link>
-        </Button>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" asChild>
-            <Link href={`/dashboard/annonces/${id}/modifier`}>
-              <Pencil className="mr-2 h-4 w-4" />
-              Modifier
-            </Link>
-          </Button>
-          <PublishDialog
-            adId={id}
-            adTitle={ad.titre}
-            validation={validation}
-          />
-        </div>
-      </div>
-
-      <div>
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-navy-900">
-            {ad.titre ?? "Sans titre"}
-          </h1>
-          <Badge variant="secondary">{getStatusLabel(ad.statut)}</Badge>
-        </div>
-        {ad.prix_vente && (
-          <p className="mt-2 text-2xl font-semibold text-navy-900">
-            {ad.prix_vente} €
-          </p>
-        )}
-      </div>
-
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Informations</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <p><strong>Quantité :</strong> {ad.quantite}</p>
-            {ad.sku && <p><strong>Référence :</strong> {ad.sku}</p>}
-            {ad.prix_achat && (
-              <p><strong>Prix d&apos;achat :</strong> {ad.prix_achat} €</p>
-            )}
-          </CardContent>
-        </Card>
-
-        {identification && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Identification</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              {identification.brand && (
-                <p><strong>Marque :</strong> {identification.brand}</p>
-              )}
-              {identification.model && (
-                <p><strong>Modèle :</strong> {identification.model}</p>
-              )}
-              {identification.partNumber && (
-                <p><strong>Référence :</strong> {identification.partNumber}</p>
-              )}
-              {identification.condition && (
-                <p><strong>État :</strong> {identification.condition}</p>
-              )}
-            </CardContent>
-          </Card>
-        )}
-      </div>
-
-      {ad.description && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Description</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="whitespace-pre-wrap text-sm">{ad.description}</p>
-          </CardContent>
-        </Card>
-      )}
-
-      {!validation.valid && (
-        <Card className="border-amber-200 bg-amber-50">
-          <CardHeader>
-            <CardTitle className="text-amber-800">
-              Éléments à compléter
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="list-disc space-y-1 pl-4 text-sm text-amber-700">
-              {validation.errors.map((e) => (
-                <li key={e.field}>{e.message}</li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      )}
-
-      {ad.notes && (
-        <>
-          <Separator />
-          <p className="text-sm text-muted-foreground">
-            <strong>Notes :</strong> {ad.notes}
-          </p>
-        </>
-      )}
-    </div>
+    <AdDetailEditor
+      adId={id}
+      initial={{
+        titre: ad.titre ?? "",
+        description: ad.description ?? "",
+        prix_vente: ad.prix_vente ?? "",
+        quantite: ad.quantite ?? 1,
+        ebay_condition_id: ad.ebay_condition_id
+          ? String(ad.ebay_condition_id)
+          : "1000",
+        ebay_category_id: ad.ebay_category_id ?? "",
+        sku: ad.sku ?? "",
+        statut: ad.statut,
+      }}
+      images={images.map((i) => ({
+        id: i.id,
+        url: i.url,
+        ordre: i.ordre,
+        est_principale: i.est_principale,
+        storage_path: i.storage_path ?? null,
+      }))}
+      resolution={resolution}
+      validation={validation}
+      currency={(meta.currency as string) || "EUR"}
+    />
   );
 }

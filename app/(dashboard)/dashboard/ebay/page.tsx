@@ -3,10 +3,11 @@ import { createClient } from "@/lib/supabase/server";
 import { getEbayAccounts } from "@/features/ebay/actions";
 import { EbayConnect } from "@/features/ebay/components/ebay-connect";
 import { EbaySettings } from "@/features/ebay/components/ebay-settings";
+import { PageHeader } from "@/components/layout/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export const metadata = {
-  title: "Compte eBay — SNOWOLF",
+  title: "Compte eBay — Smart Seller",
 };
 
 async function EbayContent() {
@@ -37,12 +38,10 @@ async function EbayContent() {
 export default function EbayPage() {
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-navy-900">Compte eBay</h1>
-        <p className="text-muted-foreground">
-          Connectez votre compte vendeur eBay pour publier vos annonces
-        </p>
-      </div>
+      <PageHeader
+        title="Compte eBay"
+        description="Connectez votre compte vendeur eBay pour publier vos annonces"
+      />
 
       <Suspense
         fallback={
