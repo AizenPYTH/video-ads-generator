@@ -2,9 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { EbayClient } from "@/services/ebay/client";
-import { decrypt } from "@/lib/crypto/encryption";
 import {
   createInventoryItem,
   ensureOffer,
@@ -26,6 +24,7 @@ import {
 } from "@/services/ebay/listing-url";
 import { validateAdForPublish } from "@/features/ads/validation";
 import { fetchAdById } from "@/features/ads/queries";
+import { getEbayTokens } from "@/services/ebay/oauth";
 import type { IdentificationResult } from "@/types/identification";
 import type { AdImagesRow } from "@/types/database";
 import { AppError } from "@/lib/errors/app-error";
@@ -53,26 +52,9 @@ async function requireUserId(): Promise<string> {
 }
 
 async function getEbayAccessToken(userId: string): Promise<string | null> {
-  const supabase = createAdminClient();
-
-  const { data: account } = await supabase
-    .from("ebay_accounts")
-    .select("access_token_encrypted, token_expires_at")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
-
-  if (!account?.access_token_encrypted) return null;
-
-  if (
-    account.token_expires_at &&
-    new Date(account.token_expires_at) < new Date()
-  ) {
-    return null;
-  }
-
-  return decrypt(account.access_token_encrypted);
+  // Refresh automatique si access token proche de l’expiration / expiré
+  const tokens = await getEbayTokens(userId);
+  return tokens?.accessToken ?? null;
 }
 
 async function getAdImages(userId: string, adId: string): Promise<string[]> {

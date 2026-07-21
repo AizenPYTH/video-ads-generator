@@ -4,12 +4,11 @@ import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { decrypt } from "@/lib/crypto/encryption";
 import { EbayClient } from "@/services/ebay/client";
 import {
   generateOAuthState,
   getEbayAuthorizationUrl,
+  getEbayTokens,
   hashState,
 } from "@/services/ebay/oauth";
 import { fetchEbayPolicies } from "@/services/ebay/policies";
@@ -59,31 +58,13 @@ async function requireUserId(): Promise<string> {
 }
 
 async function getActiveEbayAccessToken(userId: string): Promise<string> {
-  const admin = createAdminClient();
-  const { data: account } = await admin
-    .from("ebay_accounts")
-    .select("access_token_encrypted, token_expires_at")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
-
-  if (!account?.access_token_encrypted) {
+  const tokens = await getEbayTokens(userId);
+  if (!tokens?.accessToken) {
     throw AppError.validation(
-      "Aucun compte eBay connecté. Connectez d’abord votre compte test.",
+      "Aucun compte eBay connecté ou token expiré. Reconnectez votre compte test sur /dashboard/ebay.",
     );
   }
-
-  if (
-    account.token_expires_at &&
-    new Date(account.token_expires_at) < new Date()
-  ) {
-    throw AppError.validation(
-      "Token eBay expiré. Reconnectez votre compte eBay.",
-    );
-  }
-
-  return decrypt(account.access_token_encrypted);
+  return tokens.accessToken;
 }
 
 export async function connectEbay(): Promise<void> {
