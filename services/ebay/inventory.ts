@@ -117,6 +117,50 @@ export function isEbayAlreadyPublishedError(err: unknown): boolean {
   return false;
 }
 
+/** Offre introuvable / non publiable (souvent après retry ou reconnexion sandbox). */
+export function isEbayOfferUnavailableError(err: unknown): boolean {
+  if (!(err instanceof AppError)) return false;
+  if (err.status === 404) return true;
+  const msg = err.message.toLowerCase();
+  if (
+    msg.includes("pas disponible") ||
+    msg.includes("not available") ||
+    msg.includes("didn't find the entity") ||
+    msg.includes("did not find the entity") ||
+    msg.includes("we didn't find")
+  ) {
+    return true;
+  }
+  const details = err.details;
+  if (details && typeof details === "object") {
+    const errors = (details as { errors?: Array<{ errorId?: number }> }).errors;
+    // 25710 = entity not found (Inventory)
+    if (Array.isArray(errors) && errors.some((e) => e.errorId === 25710)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export async function deleteOffer(
+  client: EbayClient,
+  offerId: string,
+): Promise<void> {
+  if (isEbayMockMode()) {
+    mockOffers.delete(offerId);
+    return;
+  }
+  try {
+    await client.delete(
+      `/sell/inventory/v1/offer/${encodeURIComponent(offerId)}`,
+    );
+  } catch (err) {
+    if (isEbayOfferUnavailableError(err)) return;
+    // Offre déjà publiée / non supprimable — laisser l’appelant gérer
+    throw err;
+  }
+}
+
 export async function createInventoryItem(
   client: EbayClient,
   input: InventoryItemInput,
@@ -285,11 +329,21 @@ export async function ensureOffer(
 
   const draft = existing.find((o) => o.offerId);
   if (draft?.offerId) {
-    await updateOffer(client, draft.offerId, {
-      ...input,
-      marketplaceId: marketplace,
-    });
-    return { offerId: draft.offerId, alreadyPublished: false };
+    const live = await getOffer(client, draft.offerId);
+    if (!live) {
+      // Entrée fantôme côté liste SKU — on recrée plus bas
+      try {
+        await deleteOffer(client, draft.offerId);
+      } catch {
+        /* ignore */
+      }
+    } else {
+      await updateOffer(client, draft.offerId, {
+        ...input,
+        marketplaceId: marketplace,
+      });
+      return { offerId: draft.offerId, alreadyPublished: false };
+    }
   }
 
   try {

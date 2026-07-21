@@ -8,6 +8,8 @@ import {
   ensureOffer,
   getOffer,
   publishOffer,
+  deleteOffer,
+  isEbayOfferUnavailableError,
 } from "@/services/ebay/inventory";
 import { resolveListingPolicies } from "@/services/ebay/sandbox-setup";
 import { toEbayInventoryCondition } from "@/services/ebay/condition";
@@ -272,7 +274,7 @@ export async function publishAd(
     };
 
     // Réutilise l’offre eBay si un essai précédent l’a déjà créée (idempotent)
-    const ensured = await ensureOffer(client, offerInput);
+    let ensured = await ensureOffer(client, offerInput);
 
     await supabase
       .from("ads")
@@ -290,15 +292,50 @@ export async function publishAd(
       })
       .eq("id", adId);
 
-    const publishResult =
-      ensured.alreadyPublished && ensured.listingId
-        ? {
+    let publishResult:
+      | {
+          listingId: string;
+          offerId: string;
+          sku: string;
+          status: string;
+        }
+      | Awaited<ReturnType<typeof publishOffer>>;
+
+    if (ensured.alreadyPublished && ensured.listingId) {
+      publishResult = {
+        listingId: ensured.listingId,
+        offerId: ensured.offerId,
+        sku: ad.sku!,
+        status: "PUBLISHED",
+      };
+    } else {
+      try {
+        publishResult = await publishOffer(client, ensured.offerId);
+      } catch (publishErr) {
+        // Offre orpheline / invalide (404) : supprimer et recréer une fois
+        if (!isEbayOfferUnavailableError(publishErr)) throw publishErr;
+        console.warn("[publish] offer unavailable, recreating", {
+          adId,
+          offerId: ensured.offerId,
+        });
+        try {
+          await deleteOffer(client, ensured.offerId);
+        } catch {
+          /* ignore */
+        }
+        ensured = await ensureOffer(client, offerInput);
+        if (ensured.alreadyPublished && ensured.listingId) {
+          publishResult = {
             listingId: ensured.listingId,
             offerId: ensured.offerId,
             sku: ad.sku!,
             status: "PUBLISHED",
-          }
-        : await publishOffer(client, ensured.offerId);
+          };
+        } else {
+          publishResult = await publishOffer(client, ensured.offerId);
+        }
+      }
+    }
 
     // Vérifier côté eBay qu’un vrai listingId existe avant de marquer Publié
     let listingId = publishResult.listingId?.trim() || "";
