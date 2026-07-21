@@ -54,10 +54,11 @@ export type BulkAdRow = {
 
 type Props = {
   ads: BulkAdRow[];
+  /** @deprecated non affiché — conservé pour compat appelants */
   isSandbox?: boolean;
 };
 
-export function AdsBulkBoard({ ads: initialAds, isSandbox = true }: Props) {
+export function AdsBulkBoard({ ads: initialAds }: Props) {
   const router = useRouter();
   const [ads, setAds] = useState(initialAds);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -155,20 +156,6 @@ export function AdsBulkBoard({ ads: initialAds, isSandbox = true }: Props) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <SaveStatusIndicator status={saveStatus} />
-        {isSandbox ? (
-          <p className="text-xs text-muted-foreground">
-            Sandbox FR — annonces sur{" "}
-            <a
-              href="https://www.sandbox.ebay.fr/sh/lst/active"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline"
-            >
-              sandbox.ebay.fr
-            </a>
-            , pas ebay.com
-          </p>
-        ) : null}
       </div>
 
       <AdsBulkToolbar
@@ -225,9 +212,10 @@ export function AdsBulkBoard({ ads: initialAds, isSandbox = true }: Props) {
       />
 
       {/* Desktop table */}
-      <div className="hidden overflow-hidden rounded-xl border bg-card shadow-sm md:block">
+      <div className="hidden overflow-hidden rounded-[var(--ss-radius)] border border-[var(--ss-border)] bg-[var(--ss-surface)] shadow-[var(--ss-shadow-sm)] md:block">
+        <div className="max-h-[min(70vh,720px)] overflow-auto">
         <table className="w-full text-sm">
-          <thead className="border-b bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+          <thead className="sticky top-0 z-10 border-b border-[var(--ss-border)] bg-[var(--ss-surface-muted)]/95 text-left text-[11px] font-semibold uppercase tracking-wide text-[var(--ss-text-muted)] backdrop-blur">
             <tr>
               <th className="w-10 px-3 py-3">
                 <Checkbox
@@ -237,12 +225,11 @@ export function AdsBulkBoard({ ads: initialAds, isSandbox = true }: Props) {
                 />
               </th>
               <th className="px-2 py-3">Image</th>
-              <th className="px-3 py-3">Titre</th>
-              <th className="px-3 py-3">SKU</th>
+              <th className="px-3 py-3">Titre / réf.</th>
               <th className="px-3 py-3">Prix</th>
-              <th className="px-3 py-3">Qté</th>
-              <th className="px-3 py-3">Catégorie</th>
+              <th className="px-3 py-3">Stock</th>
               <th className="px-3 py-3">Statut</th>
+              <th className="px-3 py-3">eBay</th>
               <th className="px-3 py-3"> </th>
             </tr>
           </thead>
@@ -251,18 +238,18 @@ export function AdsBulkBoard({ ads: initialAds, isSandbox = true }: Props) {
               <tr
                 key={ad.id}
                 className={cn(
-                  "border-b last:border-0 hover:bg-accent/40",
-                  selected.has(ad.id) && "bg-accent/50",
+                  "border-b border-[var(--ss-border)]/70 last:border-0 transition-colors duration-150 hover:bg-[var(--ss-glacier-50)]/70",
+                  selected.has(ad.id) && "bg-[var(--ss-glacier-50)]",
                 )}
               >
-                <td className="px-3 py-2 align-middle">
+                <td className="px-3 py-3 align-middle">
                   <Checkbox
                     checked={selected.has(ad.id)}
                     onCheckedChange={() => toggleOne(ad.id)}
                     aria-label={`Sélectionner ${ad.titre ?? ad.sku ?? ad.id}`}
                   />
                 </td>
-                <td className="px-2 py-2 align-middle">
+                <td className="px-2 py-3 align-middle">
                   <AdRowImageDrop
                     adId={ad.id}
                     imageUrl={ad.imageUrl}
@@ -272,22 +259,19 @@ export function AdsBulkBoard({ ads: initialAds, isSandbox = true }: Props) {
                       patchLocal(ad.id, { imageUrl: url, hasImage: true })
                     }
                   />
-                  {!ad.hasImage ? (
-                    <p className="mt-1 text-[10px] text-amber-700">Manquante</p>
-                  ) : null}
                 </td>
-                <td className="max-w-[220px] px-3 py-2 align-middle">
+                <td className="max-w-[260px] px-3 py-3 align-middle">
                   <Link
                     href={`/dashboard/annonces/${ad.id}`}
-                    className="line-clamp-2 font-medium text-primary hover:underline"
+                    className="line-clamp-2 font-medium text-[var(--ss-text)] hover:text-[var(--ss-glacier-500)]"
                   >
                     {ad.titre ?? "Sans titre"}
                   </Link>
+                  <p className="mt-0.5 font-mono text-[11px] text-[var(--ss-text-muted)]">
+                    {ad.sku ?? "—"}
+                  </p>
                 </td>
-                <td className="px-3 py-2 align-middle font-mono text-xs text-muted-foreground">
-                  {ad.sku ?? "—"}
-                </td>
-                <td className="px-3 py-2 align-middle">
+                <td className="px-3 py-3 align-middle">
                   <Input
                     type="number"
                     min="0"
@@ -304,9 +288,10 @@ export function AdsBulkBoard({ ads: initialAds, isSandbox = true }: Props) {
                         Math.max(1, ad.quantite || 1),
                       )
                     }
+                    aria-label="Prix"
                   />
                 </td>
-                <td className="px-3 py-2 align-middle">
+                <td className="px-3 py-3 align-middle">
                   <Input
                     type="number"
                     min="1"
@@ -324,41 +309,45 @@ export function AdsBulkBoard({ ads: initialAds, isSandbox = true }: Props) {
                         Math.max(1, Number(e.target.value) || 1),
                       )
                     }
+                    aria-label="Stock"
                   />
                 </td>
-                <td className="max-w-[140px] truncate px-3 py-2 align-middle text-xs text-muted-foreground">
-                  {ad.categoryName ?? "—"}
-                </td>
-                <td className="px-3 py-2 align-middle">
+                <td className="px-3 py-3 align-middle">
                   <Badge variant="secondary" className="font-normal">
                     {getStatusLabel(ad.statut)}
                   </Badge>
                 </td>
-                <td className="px-3 py-2 align-middle">
-                  <div className="flex items-center gap-1">
-                    {ad.listingUrl ? (
-                      <Button variant="ghost" size="icon" asChild>
-                        <a
-                          href={ad.listingUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          aria-label="Voir sur eBay"
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                        </a>
-                      </Button>
-                    ) : null}
+                <td className="px-3 py-3 align-middle">
+                  {ad.listingUrl ? (
                     <Button variant="ghost" size="icon" asChild>
-                      <Link href={`/dashboard/annonces/${ad.id}`}>
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Link>
+                      <a
+                        href={ad.listingUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label="Voir sur eBay"
+                      >
+                        <ExternalLink className="size-4" />
+                      </a>
                     </Button>
-                  </div>
+                  ) : (
+                    <span className="text-xs text-[var(--ss-text-muted)]">—</span>
+                  )}
+                </td>
+                <td className="px-3 py-3 align-middle">
+                  <Button variant="ghost" size="icon" asChild>
+                    <Link
+                      href={`/dashboard/annonces/${ad.id}`}
+                      aria-label="Ouvrir l’annonce"
+                    >
+                      <MoreHorizontal className="size-4" />
+                    </Link>
+                  </Button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Mobile cards */}
@@ -367,8 +356,8 @@ export function AdsBulkBoard({ ads: initialAds, isSandbox = true }: Props) {
           <li
             key={ad.id}
             className={cn(
-              "rounded-xl border bg-card p-3 shadow-sm",
-              selected.has(ad.id) && "ring-2 ring-primary/30",
+              "rounded-[var(--ss-radius)] border border-[var(--ss-border)] bg-[var(--ss-surface)] p-3 shadow-[var(--ss-shadow-sm)]",
+              selected.has(ad.id) && "ring-2 ring-[var(--ss-glacier-400)]/40",
             )}
           >
             <div className="flex gap-3">

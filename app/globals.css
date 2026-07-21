@@ -1,65 +1,121 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f7fafc;
-  --foreground: #10243e;
-  --card: #ffffff;
-  --card-foreground: #10243e;
-  --popover: #ffffff;
-  --popover-foreground: #10243e;
-  --primary: #102f50;
-  --primary-foreground: #f8fcff;
-  --secondary: #eaf3f8;
-  --secondary-foreground: #173b5f;
-  --muted: #eef4f7;
-  --muted-foreground: #60758a;
-  --accent: #e1f3fb;
-  --accent-foreground: #153b5e;
-  --destructive: #c63f4d;
-  --destructive-foreground: #ffffff;
-  --border: #d9e4eb;
-  --input: #cad9e3;
-  --ring: #2387b7;
-  --radius: 0.75rem;
-  --shadow-color: 207 44% 18%;
+  /* ——— Smart Seller design tokens (--ss-*) ——— */
+  --ss-navy-950: #0a1a2e;
+  --ss-navy-900: #10243e;
+  --ss-navy-800: #102f50;
+  --ss-navy-700: #1c466e;
+  --ss-navy-600: #2a5a88;
 
-  --navy-900: #10243e;
-  --navy-700: #1c466e;
-  --glacier-300: #72c5e8;
-  --glacier-100: #e1f3fb;
+  --ss-glacier-500: #1a7ab8;
+  --ss-glacier-400: #3db8e0;
+  --ss-glacier-300: #72c5e8;
+  --ss-glacier-200: #a8ddf0;
+  --ss-glacier-100: #e1f3fb;
+  --ss-glacier-50: #f0f9fc;
 
   --ss-surface: #ffffff;
-  --ss-border: var(--border);
-  --ss-shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.06);
-  --ss-electric: #1a7ab8;
-  --ss-cyan: #3db8e0;
+  --ss-surface-muted: #f4f8fb;
+  --ss-border: #d5e2eb;
+  --ss-border-strong: #b8ccd9;
+  --ss-text: #10243e;
+  --ss-text-muted: #5a7186;
+  --ss-success: #1a7a4c;
+  --ss-success-bg: #e8f6ef;
+  --ss-warning: #b45309;
+  --ss-warning-bg: #fff7ed;
+  --ss-danger: #c63f4d;
+  --ss-danger-bg: #fdecef;
+
+  --ss-radius: 0.75rem;
+  --ss-shadow-sm: 0 1px 2px rgb(16 36 62 / 0.05);
+  --ss-shadow-md: 0 4px 16px rgb(16 36 62 / 0.06);
+
+  /* shadcn-compatible aliases */
+  --background: var(--ss-surface-muted);
+  --foreground: var(--ss-text);
+  --card: var(--ss-surface);
+  --card-foreground: var(--ss-text);
+  --popover: var(--ss-surface);
+  --popover-foreground: var(--ss-text);
+  --primary: var(--ss-navy-800);
+  --primary-foreground: #f8fcff;
+  --secondary: #eaf3f8;
+  --secondary-foreground: var(--ss-navy-700);
+  --muted: #eef4f7;
+  --muted-foreground: var(--ss-text-muted);
+  --accent: var(--ss-glacier-100);
+  --accent-foreground: var(--ss-navy-700);
+  --destructive: var(--ss-danger);
+  --destructive-foreground: #ffffff;
+  --border: var(--ss-border);
+  --input: var(--ss-border-strong);
+  --ring: var(--ss-glacier-500);
+  --radius: var(--ss-radius);
+  --shadow-color: 207 44% 18%;
+
+  --navy-900: var(--ss-navy-900);
+  --navy-700: var(--ss-navy-700);
+  --glacier-300: var(--ss-glacier-300);
+  --glacier-100: var(--ss-glacier-100);
+
+  --ss-electric: var(--ss-glacier-500);
+  --ss-cyan: var(--ss-glacier-400);
 }
 
 .dark {
-  --background: #081521;
-  --foreground: #edf7fb;
-  --card: #0d1e2c;
-  --card-foreground: #edf7fb;
-  --popover: #0d1e2c;
-  --popover-foreground: #edf7fb;
+  --ss-navy-950: #02080f;
+  --ss-navy-900: #0a1624;
+  --ss-navy-800: #10243e;
+  --ss-navy-700: #a8ddf0;
+  --ss-navy-600: #72c5e8;
+
+  --ss-glacier-500: #3db8e0;
+  --ss-glacier-400: #72c5e8;
+  --ss-glacier-300: #a8ddf0;
+  --ss-glacier-200: #18374a;
+  --ss-glacier-100: #122a3a;
+  --ss-glacier-50: #0d1e2c;
+
+  --ss-surface: #0d1e2c;
+  --ss-surface-muted: #081521;
+  --ss-border: #203b4d;
+  --ss-border-strong: #2a485b;
+  --ss-text: #edf7fb;
+  --ss-text-muted: #94abba;
+  --ss-success: #4ade80;
+  --ss-success-bg: #052e16;
+  --ss-warning: #fbbf24;
+  --ss-warning-bg: #422006;
+  --ss-danger: #a93645;
+  --ss-danger-bg: #3f1218;
+
+  --background: var(--ss-surface-muted);
+  --foreground: var(--ss-text);
+  --card: var(--ss-surface);
+  --card-foreground: var(--ss-text);
+  --popover: var(--ss-surface);
+  --popover-foreground: var(--ss-text);
   --primary: #8ed5ef;
   --primary-foreground: #09243a;
   --secondary: #152c3d;
   --secondary-foreground: #dcecf3;
   --muted: #132838;
-  --muted-foreground: #94abba;
+  --muted-foreground: var(--ss-text-muted);
   --accent: #18374a;
   --accent-foreground: #ecf8fc;
-  --destructive: #a93645;
+  --destructive: var(--ss-danger);
   --destructive-foreground: #fff7f8;
-  --border: #203b4d;
-  --input: #2a485b;
-  --ring: #72c5e8;
+  --border: var(--ss-border);
+  --input: var(--ss-border-strong);
+  --ring: var(--ss-glacier-400);
   --shadow-color: 210 80% 2%;
+
   --navy-900: #edf7fb;
   --navy-700: #a8ddf0;
-  --glacier-300: #72c5e8;
-  --glacier-100: #18374a;
+  --glacier-300: var(--ss-glacier-400);
+  --glacier-100: var(--ss-glacier-100);
 }
 
 @theme inline {
@@ -86,18 +142,28 @@
   --color-navy-700: var(--navy-700);
   --color-glacier-300: var(--glacier-300);
   --color-glacier-100: var(--glacier-100);
+  --color-ss-navy-950: var(--ss-navy-950);
+  --color-ss-navy-900: var(--ss-navy-900);
+  --color-ss-navy-800: var(--ss-navy-800);
+  --color-ss-navy-700: var(--ss-navy-700);
+  --color-ss-glacier-500: var(--ss-glacier-500);
+  --color-ss-glacier-400: var(--ss-glacier-400);
+  --color-ss-glacier-300: var(--ss-glacier-300);
+  --color-ss-glacier-100: var(--ss-glacier-100);
+  --color-ss-glacier-50: var(--ss-glacier-50);
+  --color-ss-surface: var(--ss-surface);
+  --color-ss-surface-muted: var(--ss-surface-muted);
+  --color-ss-success: var(--ss-success);
+  --color-ss-warning: var(--ss-warning);
+  --color-ss-danger: var(--ss-danger);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   --radius-2xl: calc(var(--radius) + 8px);
   --shadow-xs: 0 1px 2px hsl(var(--shadow-color) / 0.05);
-  --shadow-sm:
-    0 1px 2px hsl(var(--shadow-color) / 0.06),
-    0 4px 12px hsl(var(--shadow-color) / 0.04);
-  --shadow-md:
-    0 2px 4px hsl(var(--shadow-color) / 0.06),
-    0 12px 30px hsl(var(--shadow-color) / 0.08);
+  --shadow-sm: var(--ss-shadow-sm);
+  --shadow-md: var(--ss-shadow-md);
   --shadow-lg:
     0 4px 8px hsl(var(--shadow-color) / 0.08),
     0 24px 60px hsl(var(--shadow-color) / 0.12);
@@ -129,13 +195,20 @@ body {
 }
 
 ::selection {
-  background: var(--glacier-100);
-  color: var(--foreground);
+  background: var(--ss-glacier-100);
+  color: var(--ss-text);
 }
 
 :focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
+}
+
+/* Utility: mono for technical refs */
+.font-sku {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.8125rem;
+  letter-spacing: -0.01em;
 }
 
 @media (prefers-reduced-motion: reduce) {

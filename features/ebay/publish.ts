@@ -152,9 +152,9 @@ export async function publishAd(
       const sandbox = isEbaySandboxEnvironment();
       return {
         success: true,
-        message: sandbox
-          ? `Déjà publiée sur eBay Sandbox. Ouvrez : ${listingUrl ?? sellerListingsUrl}`
-          : `Déjà publiée sur eBay.`,
+        message: listingUrl
+          ? `Cette annonce est déjà publiée sur eBay. Ouvrez-la : ${listingUrl}`
+          : "Cette annonce est déjà publiée sur eBay.",
         data: {
           listingId,
           offerId: "",
@@ -167,7 +167,10 @@ export async function publishAd(
 
     const accessToken = await getEbayAccessToken(userId);
     if (!accessToken) {
-      return { error: "Compte eBay non connecté ou token expiré." };
+      return {
+        error:
+          "Votre connexion eBay a expiré. Reconnectez votre compte pour continuer.",
+      };
     }
 
     const settings = await getUserSettings(userId);
@@ -396,7 +399,7 @@ export async function publishAd(
     if (!listingId) {
       throw new AppError(
         "EBAY_ERROR",
-        "eBay n’a pas confirmé d’ID d’annonce active. L’offre existe peut‑être en brouillon : réessayez « Publier », ou ouvrez Mes annonces sur sandbox.ebay.fr (pas ebay.fr).",
+        "eBay n’a pas confirmé la publication. Réessayez « Publier », ou vérifiez l’annonce dans votre compte vendeur eBay.",
         { status: 400 },
       );
     }
@@ -465,9 +468,9 @@ export async function publishAd(
     revalidatePath("/dashboard/annonces");
     revalidatePath(`/dashboard/annonces/${adId}`);
 
-    const message = sandbox
-      ? `Publiée sur eBay Sandbox (pas sur ebay.fr). Ouvrez : ${listingUrl ?? sellerListingsUrl}`
-      : `Publiée sur eBay. ${listingUrl ?? ""}`;
+    const message = listingUrl
+      ? `Annonce publiée sur eBay. Ouvrez-la : ${listingUrl}`
+      : "Annonce publiée sur eBay.";
 
     return {
       success: true,
@@ -492,7 +495,9 @@ export async function publishAd(
       })
       .eq("id", adId);
 
-    const friendly = `${humanizePublishError(err)} [ss7]`;
+    const friendly = humanizePublishError(err);
+    // Marqueur interne pour logs / diagnostics (non affiché)
+    console.error("[publishAd ss7]", err);
     return { error: friendly };
   }
 }
@@ -505,16 +510,16 @@ function humanizePublishError(err: unknown): string {
     return "Une offre eBay existe déjà pour ce SKU — réessayez, la publication va la réutiliser automatiquement.";
   }
   if (/already published|déjà publi/i.test(msg)) {
-    return "Cette annonce semble déjà publiée sur eBay Sandbox. Ouvrez sandbox.ebay.fr (pas ebay.fr) → Mes annonces.";
+    return "Cette annonce semble déjà publiée. Vérifiez-la dans votre compte vendeur eBay.";
   }
   if (/marque compatible|compatible brand|item specific|caractéristique/i.test(msg)) {
     return msg;
   }
   if (/policy|politique/i.test(msg)) {
-    return `Politiques eBay invalides ou manquantes. ${msg}`;
+    return "Une politique de vente est manquante ou invalide sur votre compte eBay. Vérifiez expédition, retours et paiement.";
   }
   if (/location|lieu|merchant/i.test(msg)) {
-    return `Lieu d’expédition eBay manquant ou invalide. ${msg}`;
+    return "Votre lieu d’expédition doit être vérifié sur votre compte eBay.";
   }
   if (/image|https/i.test(msg)) {
     return msg;

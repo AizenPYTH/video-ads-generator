@@ -45,7 +45,7 @@ export default function EbayPage() {
     <div className="space-y-6">
       <PageHeader
         title="Compte eBay"
-        description="Connectez votre compte vendeur eBay pour publier vos annonces"
+        description="Connectez votre compte vendeur eBay pour publier et gérer vos annonces depuis Smart Seller."
       />
 
       <Suspense

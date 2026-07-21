@@ -82,6 +82,7 @@ type Props = {
   ebayListingId?: string | null;
   ebayListingUrl?: string | null;
   ebaySellerListingsUrl?: string | null;
+  /** @deprecated non affiché aux utilisateurs */
   isSandbox?: boolean;
 };
 
@@ -92,10 +93,9 @@ export function AdDetailEditor({
   resolution,
   validation,
   currency,
-  ebayListingId,
+  ebayListingId: _ebayListingId,
   ebayListingUrl,
   ebaySellerListingsUrl,
-  isSandbox = true,
 }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -268,18 +268,13 @@ export function AdDetailEditor({
       </div>
 
       {initial.statut === "PUBLISHED" && (
-        <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
-          <p className="font-medium">Annonce publiée sur eBay{isSandbox ? " Sandbox" : ""}</p>
-          {ebayListingId ? (
-            <p className="mt-1">ID eBay : {ebayListingId}</p>
-          ) : null}
-          {isSandbox ? (
-            <p className="mt-1">
-              Visible uniquement sur{" "}
-              <strong>sandbox.ebay.fr</strong> avec le compte test — pas sur
-              ebay.fr.
-            </p>
-          ) : null}
+        <div className="rounded-[var(--ss-radius)] border border-[var(--ss-success)]/30 bg-[var(--ss-success-bg)] px-4 py-3 text-sm text-[var(--ss-text)]">
+          <p className="font-medium text-[var(--ss-success)]">
+            Annonce publiée sur eBay
+          </p>
+          <p className="mt-1 text-[var(--ss-text-muted)]">
+            Elle est visible dans votre compte vendeur eBay.
+          </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {ebayListingUrl ? (
               <Button asChild size="sm">
@@ -295,7 +290,7 @@ export function AdDetailEditor({
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  Mes annonces eBay
+                  Ouvrir mon compte eBay
                 </a>
               </Button>
             ) : null}
@@ -396,7 +391,6 @@ export function AdDetailEditor({
             adId={adId}
             adTitle={asText(titre)}
             validation={publishValidation}
-            sandbox={isSandbox}
           />
         </CardContent>
       </Card>

@@ -20,28 +20,11 @@ const plans = [
     description: "Pour découvrir Smart Seller",
     features: [
       "10 analyses par mois",
-      "3 publications par mois",
+      "3 publications",
       "2 imports CSV",
-      "3 images par produit",
     ],
     cta: "Commencer",
     href: "/signup",
-    highlighted: false,
-  },
-  {
-    name: "Starter",
-    price: "19 €",
-    period: "/mois",
-    description: "Pour les vendeurs occasionnels",
-    features: [
-      "100 analyses par mois",
-      "25 publications par mois",
-      "10 imports CSV",
-      "Publication en masse (10)",
-      "6 images par produit",
-    ],
-    cta: "Choisir Starter",
-    href: "/signup?plan=starter",
     highlighted: false,
   },
   {
@@ -51,10 +34,9 @@ const plans = [
     description: "Pour les vendeurs actifs",
     features: [
       "500 analyses par mois",
-      "150 publications par mois",
+      "150 publications",
       "50 imports CSV",
-      "Publication en masse (50)",
-      "12 images par produit",
+      "Publication en masse",
     ],
     cta: "Choisir Pro",
     href: "/signup?plan=pro",
@@ -66,11 +48,10 @@ const plans = [
     period: "/mois",
     description: "Pour les professionnels",
     features: [
-      "2000 analyses par mois",
-      "1000 publications par mois",
+      "2 000 analyses",
+      "1 000 publications",
       "200 imports CSV",
-      "Publication en masse (200)",
-      "24 images par produit",
+      "Volumes élevés",
     ],
     cta: "Choisir Business",
     href: "/signup?plan=business",
@@ -80,48 +61,62 @@ const plans = [
 
 export function Pricing() {
   return (
-    <section className="border-t border-border/70 bg-background px-4 py-20 sm:px-6 sm:py-24" id="tarifs">
+    <section
+      className="border-t border-[var(--ss-border)] bg-[var(--ss-surface)] px-4 py-20 sm:px-6 sm:py-24"
+      id="tarifs"
+    >
       <div className="mx-auto max-w-6xl">
         <div className="mx-auto max-w-2xl text-center">
-          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-navy-700">
-            Tarifs
-          </p>
-          <h2 className="mt-3 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-            Une formule adaptée à votre rythme
+          <h2 className="text-3xl font-semibold tracking-[-0.03em] text-[var(--ss-text)] sm:text-4xl">
+            Des tarifs clairs, adaptés à votre volume
           </h2>
-          <p className="mt-4 leading-7 text-muted-foreground">
-            Commencez gratuitement, puis choisissez le volume qui correspond à
-            votre activité.
+          <p className="mt-4 text-[var(--ss-text-muted)]">
+            Commencez gratuitement, puis évoluez quand votre activité le
+            demande.
           </p>
         </div>
 
-        <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mx-auto mt-12 grid max-w-5xl gap-5 md:grid-cols-3">
           {plans.map((plan) => (
             <Card
               key={plan.name}
               className={cn(
-                "relative flex flex-col border-border/80 shadow-sm",
-                plan.highlighted && "border-primary/60 shadow-md ring-1 ring-primary/20"
+                "relative flex flex-col",
+                plan.highlighted &&
+                  "border-[var(--ss-glacier-400)] shadow-[var(--ss-shadow-md)] ring-1 ring-[var(--ss-glacier-300)]/40",
               )}
             >
               {plan.highlighted && (
-                <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap bg-primary text-primary-foreground">
-                  Formule Pro
+                <Badge
+                  variant="glacier"
+                  className="absolute -top-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap"
+                >
+                  Recommandé
                 </Badge>
               )}
               <CardHeader className="pb-4">
                 <CardTitle>{plan.name}</CardTitle>
                 <CardDescription>{plan.description}</CardDescription>
                 <div className="mt-4">
-                  <span className="text-3xl font-bold tracking-tight">{plan.price}</span>
-                  <span className="text-sm text-muted-foreground">{plan.period}</span>
+                  <span className="text-3xl font-semibold tracking-tight text-[var(--ss-text)]">
+                    {plan.price}
+                  </span>
+                  <span className="text-sm text-[var(--ss-text-muted)]">
+                    {plan.period}
+                  </span>
                 </div>
               </CardHeader>
               <CardContent className="flex-1">
                 <ul className="space-y-3">
                   {plan.features.map((feature) => (
-                    <li key={feature} className="flex items-start gap-2.5 text-sm leading-5">
-                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-navy-700" aria-hidden="true" />
+                    <li
+                      key={feature}
+                      className="flex items-start gap-2.5 text-sm leading-5 text-[var(--ss-text)]"
+                    >
+                      <Check
+                        className="mt-0.5 size-4 shrink-0 text-[var(--ss-glacier-500)]"
+                        aria-hidden="true"
+                      />
                       {feature}
                     </li>
                   ))}
@@ -130,10 +125,13 @@ export function Pricing() {
               <CardFooter>
                 <Button
                   className="w-full"
-                  variant={plan.highlighted ? "default" : "outline"}
+                  variant={plan.highlighted ? "glacier" : "outline"}
                   asChild
                 >
-                  <Link href={plan.href} aria-label={`${plan.cta}, formule ${plan.name}`}>
+                  <Link
+                    href={plan.href}
+                    aria-label={`${plan.cta}, formule ${plan.name}`}
+                  >
                     {plan.cta}
                   </Link>
                 </Button>

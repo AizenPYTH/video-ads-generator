@@ -128,8 +128,9 @@ export function EbaySettings({
       <CardHeader>
         <CardTitle>Préférences de publication</CardTitle>
         <CardDescription>
-          Remplies automatiquement à la connexion / publication. Sur un vrai
-          compte eBay, vos politiques Seller Hub sont réutilisées.
+          Remplies automatiquement à la connexion. Vous pouvez ajuster les
+          politiques d’expédition, de retour, de paiement et le lieu
+          d’expédition utilisés pour la publication.
         </CardDescription>
       </CardHeader>
       <CardContent>

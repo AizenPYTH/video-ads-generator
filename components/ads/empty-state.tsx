@@ -18,20 +18,22 @@ export function EmptyState({
   icon,
 }: EmptyStateProps) {
   return (
-    <div className="relative isolate flex flex-col items-center justify-center overflow-hidden rounded-xl border border-dashed border-border bg-card px-6 py-14 text-center shadow-xs sm:py-16">
+    <div className="relative isolate flex flex-col items-center justify-center overflow-hidden rounded-[var(--ss-radius)] border border-dashed border-[var(--ss-border)] bg-[var(--ss-surface)] px-6 py-14 text-center shadow-[var(--ss-shadow-sm)] sm:py-16">
       <div
-        className="pointer-events-none absolute inset-x-1/4 top-0 -z-10 h-32 rounded-full bg-glacier-100/70 blur-3xl"
+        className="pointer-events-none absolute inset-x-1/4 top-0 -z-10 h-32 rounded-full bg-[var(--ss-glacier-100)]/80 blur-3xl"
         aria-hidden="true"
       />
-      <div className="mb-5 flex size-14 items-center justify-center rounded-xl border border-glacier-300/30 bg-glacier-100 text-navy-700 shadow-xs">
-        {icon ?? <FileQuestion className="h-7 w-7" />}
+      <div className="mb-5 flex size-14 items-center justify-center rounded-lg border border-[var(--ss-glacier-300)]/30 bg-[var(--ss-glacier-100)] text-[var(--ss-navy-800)]">
+        {icon ?? <FileQuestion className="size-7" />}
       </div>
-      <h3 className="text-lg font-semibold tracking-tight text-foreground">{title}</h3>
-      <p className="mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
+      <h3 className="text-lg font-semibold tracking-tight text-[var(--ss-text)]">
+        {title}
+      </h3>
+      <p className="mt-2 max-w-md text-sm leading-relaxed text-[var(--ss-text-muted)]">
         {description}
       </p>
       {actionLabel && actionHref && (
-        <Button asChild className="mt-6 shadow-sm">
+        <Button asChild className="mt-6">
           <Link href={actionHref}>{actionLabel}</Link>
         </Button>
       )}

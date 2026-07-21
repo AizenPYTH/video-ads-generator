@@ -10,10 +10,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { showDeveloperTools } from "@/lib/ui/dev-tools";
 
 export const metadata = {
   title: "Connexion eBay — Smart Seller",
-  description: "Résultat de l'autorisation OAuth eBay pour Smart Seller.",
+  description: "Résultat de la connexion de votre compte vendeur eBay.",
 };
 
 type PageProps = {
@@ -27,22 +28,18 @@ function firstParam(
   return value;
 }
 
-function humanizeEbayError(error: string): string {
+function humanizeEbayError(error: string, showDev: boolean): string {
   const lower = error.toLowerCase();
   if (lower.includes("état oauth") || lower.includes("oauth state")) {
-    return "La session de connexion a expiré. Revenez sur Compte eBay et cliquez à nouveau sur Connecter.";
+    return "La session de connexion a expiré. Revenez sur Compte eBay et réessayez.";
   }
-  if (lower.includes("encryption_key")) {
-    return "Configuration serveur incomplète (ENCRYPTION_KEY). Contactez l’administrateur.";
+  if (lower.includes("encryption_key") || lower.includes("token exchange") || lower.includes("credentials")) {
+    return "Nous n’avons pas pu connecter votre compte eBay. Vérifiez vos identifiants puis réessayez.";
   }
-  if (lower.includes("token exchange") || lower.includes("credentials")) {
-    return "Échange de jeton eBay refusé. Vérifiez Client ID, Secret, RuName et l’environnement (sandbox/production).";
-  }
-  // Affiche le détail Postgres / crypto pour pouvoir corriger vite.
-  if (error.length > 8 && error.length < 280) {
+  if (showDev && error.length > 8 && error.length < 280) {
     return error;
   }
-  return "La connexion n'a pas pu être finalisée. Vous pouvez réessayer depuis votre espace.";
+  return "Nous n’avons pas pu connecter votre compte eBay. Vérifiez vos identifiants puis réessayez.";
 }
 
 export default async function EbayOAuthResultPage({ searchParams }: PageProps) {
@@ -50,43 +47,44 @@ export default async function EbayOAuthResultPage({ searchParams }: PageProps) {
   const error = firstParam(params.error);
   const connected = firstParam(params.connected) === "true";
   const denied = error === "access_denied";
+  const showDev = showDeveloperTools();
 
   let title = "Connexion eBay";
-  let description = "En attente du résultat de l'autorisation eBay.";
+  let description = "Finalisation de la connexion à votre compte vendeur.";
   let Icon = AlertTriangle;
-  let iconClass = "text-amber-600";
+  let iconClass = "text-[var(--ss-warning)]";
 
   if (connected && !error) {
     title = "Compte eBay connecté";
     description =
-      "L'autorisation a réussi. Vous pouvez maintenant publier vos annonces depuis Smart Seller.";
+      "Votre compte vendeur est prêt. Vous pouvez publier et gérer vos annonces depuis Smart Seller.";
     Icon = CheckCircle2;
-    iconClass = "text-green-600";
+    iconClass = "text-[var(--ss-success)]";
   } else if (denied) {
-    title = "Autorisation refusée";
+    title = "Connexion annulée";
     description =
-      "Vous avez refusé l'accès à votre compte eBay. Aucune donnée n'a été enregistrée.";
+      "Vous avez refusé l’accès à votre compte eBay. Aucune donnée n’a été enregistrée.";
     Icon = XCircle;
-    iconClass = "text-destructive";
+    iconClass = "text-[var(--ss-danger)]";
   } else if (error) {
-    title = "Échec de la connexion eBay";
-    description = humanizeEbayError(error);
+    title = "Connexion impossible";
+    description = humanizeEbayError(error, showDev);
     Icon = XCircle;
-    iconClass = "text-destructive";
+    iconClass = "text-[var(--ss-danger)]";
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex min-h-screen flex-col bg-[var(--ss-surface-muted)]">
       <MarketingNav />
       <main className="relative flex flex-1 items-center justify-center overflow-hidden px-4 py-16 sm:px-6">
         <div
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,var(--glacier-100),transparent_45%)]"
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_0%,var(--ss-glacier-100),transparent_50%)]"
           aria-hidden="true"
         />
-        <Card className="relative w-full max-w-lg rounded-2xl border-border/80 shadow-lg">
+        <Card className="relative w-full max-w-lg shadow-[var(--ss-shadow-md)]">
           <CardHeader className="text-center">
-            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-muted">
-              <Icon className={`h-7 w-7 ${iconClass}`} aria-hidden="true" />
+            <div className="mx-auto mb-3 flex size-14 items-center justify-center rounded-full bg-[var(--ss-glacier-50)]">
+              <Icon className={`size-7 ${iconClass}`} aria-hidden="true" />
             </div>
             <CardTitle className="text-2xl tracking-tight">{title}</CardTitle>
             <CardDescription className="leading-6">{description}</CardDescription>
@@ -95,7 +93,7 @@ export default async function EbayOAuthResultPage({ searchParams }: PageProps) {
             {connected && !error ? (
               <>
                 <Button asChild>
-                  <Link href="/dashboard/ebay">Gérer mon compte eBay</Link>
+                  <Link href="/dashboard/ebay">Gérer la connexion</Link>
                 </Button>
                 <Button variant="outline" asChild>
                   <Link href="/dashboard">Tableau de bord</Link>

@@ -8,7 +8,6 @@ import { dedupeImageUrls } from "@/lib/images/dedupe";
 import {
   buildEbayListingUrl,
   buildEbaySellerListingsUrl,
-  isEbaySandboxEnvironment,
 } from "@/services/ebay/listing-url";
 import type { IdentificationResult } from "@/types/identification";
 import type { Ad } from "@/types/ads";
@@ -208,7 +207,6 @@ export default async function AnnonceDetailPage({ params }: PageProps) {
       ebayListingId={listingId}
       ebayListingUrl={listingUrl}
       ebaySellerListingsUrl={buildEbaySellerListingsUrl()}
-      isSandbox={isEbaySandboxEnvironment()}
     />
   );
 }

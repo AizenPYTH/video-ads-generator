@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { PlusCircle } from "lucide-react";
+import { FileUp, PlusCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { fetchAds } from "@/features/ads/queries";
+import { fetchDashboardStats } from "@/features/dashboard/queries";
 import { AdFilters } from "@/features/ads/components/ad-filters";
 import { EmptyState } from "@/components/ads/empty-state";
 import { PageHeader } from "@/components/layout/page-header";
@@ -13,11 +14,9 @@ import {
   AdsBulkBoard,
   type BulkAdRow,
 } from "@/features/ads/components/bulk/ads-bulk-board";
-import {
-  buildEbayListingUrl,
-  isEbaySandboxEnvironment,
-} from "@/services/ebay/listing-url";
+import { buildEbayListingUrl } from "@/services/ebay/listing-url";
 import type { AdStatus } from "@/types/ads";
+import { cn } from "@/lib/utils";
 
 export const metadata = {
   title: "Mes annonces — Smart Seller",
@@ -31,6 +30,70 @@ type PageProps = {
     sort?: string;
   }>;
 };
+
+async function AdsStatsStrip() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const stats = await fetchDashboardStats(user.id);
+  const items = [
+    { label: "Total", value: stats.totalAds, href: "/dashboard/annonces" },
+    {
+      label: "Brouillons",
+      value: stats.drafts,
+      href: "/dashboard/annonces?group=Brouillons",
+    },
+    {
+      label: "Prêtes",
+      value: stats.ready,
+      href: "/dashboard/annonces?group=Prêtes",
+    },
+    {
+      label: "Publiées",
+      value: stats.published,
+      href: "/dashboard/annonces?group=Publiées",
+    },
+    {
+      label: "Erreurs",
+      value: stats.errors,
+      href: "/dashboard/annonces?group=Erreurs",
+      danger: true,
+    },
+  ];
+
+  return (
+    <div
+      className="flex flex-wrap divide-x divide-[var(--ss-border)] overflow-hidden rounded-[var(--ss-radius)] border border-[var(--ss-border)] bg-[var(--ss-surface)] shadow-[var(--ss-shadow-sm)]"
+      role="region"
+      aria-label="Synthèse des annonces"
+    >
+      {items.map((item) => (
+        <Link
+          key={item.label}
+          href={item.href}
+          className="min-w-[7.5rem] flex-1 px-4 py-3 transition-colors duration-150 hover:bg-[var(--ss-glacier-50)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--ss-glacier-500)]"
+        >
+          <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--ss-text-muted)]">
+            {item.label}
+          </p>
+          <p
+            className={cn(
+              "mt-0.5 text-xl font-semibold tabular-nums tracking-tight",
+              item.danger && item.value > 0
+                ? "text-[var(--ss-danger)]"
+                : "text-[var(--ss-text)]",
+            )}
+          >
+            {item.value}
+          </p>
+        </Link>
+      ))}
+    </div>
+  );
+}
 
 async function AdsList({
   searchParams,
@@ -143,10 +206,10 @@ async function AdsList({
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
+      <p className="text-sm text-[var(--ss-text-muted)]">
         {total} annonce{total > 1 ? "s" : ""} · page {page}/{totalPages || 1}
       </p>
-      <AdsBulkBoard ads={rows} isSandbox={isEbaySandboxEnvironment()} />
+      <AdsBulkBoard ads={rows} />
 
       {totalPages > 1 && (
         <div className="flex flex-wrap justify-center gap-2 pt-2">
@@ -176,7 +239,7 @@ function AdsSkeleton() {
   return (
     <div className="space-y-3">
       {Array.from({ length: 8 }).map((_, i) => (
-        <Skeleton key={i} className="h-16 w-full rounded-xl" />
+        <Skeleton key={i} className="h-16 w-full rounded-[var(--ss-radius)]" />
       ))}
     </div>
   );
@@ -189,15 +252,27 @@ export default async function AnnoncesPage({ searchParams }: PageProps) {
     <div className="space-y-6">
       <PageHeader
         title="Mes annonces"
-        description="Gérez, enrichissez et publiez vos annonces en masse."
+        description="Gérez, enrichissez et publiez vos annonces eBay."
       >
+        <Button variant="outline" asChild>
+          <Link href="/dashboard/creer/import">
+            <FileUp className="mr-2 size-4" />
+            Importer un fichier
+          </Link>
+        </Button>
         <Button asChild>
           <Link href="/dashboard/creer">
-            <PlusCircle className="mr-2 h-4 w-4" />
-            Nouvelle annonce
+            <PlusCircle className="mr-2 size-4" />
+            Créer une annonce
           </Link>
         </Button>
       </PageHeader>
+
+      <Suspense
+        fallback={<Skeleton className="h-[4.5rem] w-full rounded-[var(--ss-radius)]" />}
+      >
+        <AdsStatsStrip />
+      </Suspense>
 
       <Suspense fallback={<Skeleton className="h-10 w-full max-w-md" />}>
         <AdFilters />

@@ -61,7 +61,7 @@ async function getActiveEbayAccessToken(userId: string): Promise<string> {
   const tokens = await getEbayTokens(userId);
   if (!tokens?.accessToken) {
     throw AppError.validation(
-      "Aucun compte eBay connecté ou token expiré. Reconnectez votre compte test sur /dashboard/ebay.",
+      "Votre connexion eBay a expiré. Reconnectez votre compte pour continuer.",
     );
   }
   return tokens.accessToken;

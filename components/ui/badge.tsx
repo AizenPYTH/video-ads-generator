@@ -3,25 +3,30 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const badgeVariants = cva(
-  "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-reduce:transition-none",
+  "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-semibold leading-none transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
   {
     variants: {
       variant: {
         default:
-          "border-transparent bg-primary text-primary-foreground shadow-xs hover:bg-primary/90",
+          "border-transparent bg-[var(--ss-navy-800)] text-primary-foreground",
         secondary:
-          "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/75",
+          "border-transparent bg-secondary text-secondary-foreground",
+        outline:
+          "border-[var(--ss-border)] bg-[var(--ss-surface)] text-foreground",
+        success:
+          "border-transparent bg-[var(--ss-success-bg)] text-[var(--ss-success)]",
+        warning:
+          "border-transparent bg-[var(--ss-warning-bg)] text-[var(--ss-warning)]",
         destructive:
-          "border-transparent bg-destructive text-destructive-foreground shadow-xs hover:bg-destructive/90",
-        outline: "border-border bg-card text-foreground shadow-xs",
+          "border-transparent bg-[var(--ss-danger-bg)] text-[var(--ss-danger)]",
         glacier:
-          "border-glacier-300/35 bg-glacier-100 text-navy-700 hover:bg-glacier-100/75",
+          "border-[var(--ss-glacier-300)]/40 bg-[var(--ss-glacier-100)] text-[var(--ss-navy-700)]",
       },
     },
     defaultVariants: {
       variant: "default",
     },
-  }
+  },
 );
 
 export interface BadgeProps
