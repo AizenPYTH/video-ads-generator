@@ -109,22 +109,37 @@ export class EbayClient {
 }
 
 function extractEbayErrorMessage(data: unknown): string | null {
-  if (!data || typeof data !== "object") {
+  if (!data || typeof data === "string") {
     return typeof data === "string" ? data.slice(0, 300) : null;
   }
 
+  if (!data || typeof data !== "object") return null;
+
   const record = data as {
-    errors?: Array<{ message?: string; longMessage?: string; errorId?: number }>;
+    errors?: Array<{
+      message?: string;
+      longMessage?: string;
+      errorId?: number;
+      parameters?: Array<{ name?: string; value?: string }>;
+    }>;
     error?: string;
     message?: string;
   };
 
   if (Array.isArray(record.errors) && record.errors.length > 0) {
     return record.errors
-      .map((e) => e.longMessage || e.message || String(e.errorId ?? ""))
+      .map((e) => {
+        const id = e.errorId != null ? `#${e.errorId} ` : "";
+        const text = e.longMessage || e.message || "";
+        const params = (e.parameters ?? [])
+          .map((p) => `${p.name}=${p.value}`)
+          .filter(Boolean)
+          .join(", ");
+        return `${id}${text}${params ? ` (${params})` : ""}`.trim();
+      })
       .filter(Boolean)
       .join(" | ")
-      .slice(0, 400);
+      .slice(0, 500);
   }
 
   if (typeof record.message === "string") return record.message.slice(0, 300);

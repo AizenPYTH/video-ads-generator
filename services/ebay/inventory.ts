@@ -58,6 +58,7 @@ function offerBody(input: CreateOfferInput) {
     marketplaceId: input.marketplaceId ?? "EBAY_FR",
     format: "FIXED_PRICE" as const,
     availableQuantity: input.quantity ?? 1,
+    listingDuration: "GTC" as const,
     pricingSummary: {
       price: {
         value: Number(input.price).toFixed(2),
@@ -271,6 +272,24 @@ export async function createInventoryItem(
   );
 
   return { sku: input.sku };
+}
+
+export async function getInventoryItem(
+  client: EbayClient,
+  sku: string,
+): Promise<{ sku: string } | null> {
+  if (isEbayMockMode()) {
+    return mockInventoryItems.has(sku) ? { sku } : null;
+  }
+  try {
+    await client.get(
+      `/sell/inventory/v1/inventory_item/${encodeURIComponent(sku)}`,
+    );
+    return { sku };
+  } catch (err) {
+    if (err instanceof AppError && err.status === 404) return null;
+    throw err;
+  }
 }
 
 export async function getOffersBySku(

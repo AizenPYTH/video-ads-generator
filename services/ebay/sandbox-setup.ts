@@ -274,22 +274,32 @@ export async function ensureSellerDefaults(
   let returnPolicyId = policies.returns[0]?.id ?? "";
   let paymentPolicyId = policies.payment[0]?.id ?? "";
 
-  // Si une vieille politique FR_StandardDelivery invalide est la seule,
-  // on en crée une nouvelle (sans tout effacer).
-  const fulfillmentLooksBroken = policies.fulfillment.some((p) =>
-    /FR_StandardDelivery/i.test(p.name),
-  );
-  if (
-    allowCreate &&
-    fulfillmentLooksBroken &&
-    policies.fulfillment.every((p) => /FR_StandardDelivery|smart\s*seller/i.test(p.name))
-  ) {
-    try {
-      fulfillmentPolicyId = await createFulfillmentPolicy(client);
-      created.fulfillment = true;
-      policies = await fetchEbayPolicies(client);
-    } catch {
-      // garder l’existant
+  // Toujours (re)créer une politique d’expédition Smart Seller saine en sandbox :
+  // les politiques existantes peuvent être « présentes » mais non publiables.
+  if (allowCreate) {
+    const hasHealthyFulfillment = policies.fulfillment.some(
+      (p) =>
+        /smart\s*seller/i.test(p.name) &&
+        !/FR_StandardDelivery/i.test(p.name),
+    );
+    if (!hasHealthyFulfillment) {
+      try {
+        fulfillmentPolicyId = await createFulfillmentPolicy(client);
+        created.fulfillment = true;
+        policies = await fetchEbayPolicies(client);
+        fulfillmentPolicyId =
+          policies.fulfillment.find((p) => /smart\s*seller/i.test(p.name))?.id ||
+          fulfillmentPolicyId;
+      } catch {
+        // garder l’existant
+      }
+    } else {
+      fulfillmentPolicyId =
+        policies.fulfillment.find(
+          (p) =>
+            /smart\s*seller/i.test(p.name) &&
+            !/FR_StandardDelivery/i.test(p.name),
+        )?.id || fulfillmentPolicyId;
     }
   }
 
@@ -352,9 +362,9 @@ export const configureEbaySellerDefaults = ensureSellerDefaults;
 
 /**
  * Résout politiques + lieu pour publier.
- * Sandbox : crée automatiquement le manquant. Production : réutilise l’existant.
- * Ne fait JAMAIS confiance aux IDs préférés sans vérifier qu’ils existent encore
- * (sinon publishOffer → 404 « offre non disponible » après reconnexion OAuth).
+ * Sandbox : ignore les IDs préférés (souvent périmés / shipping invalide après OAuth)
+ * et régénère via ensureSellerDefaults.
+ * Production : réutilise les IDs préférés s’ils existent encore côté eBay.
  */
 export async function resolveListingPolicies(
   client: EbayClient,
@@ -372,6 +382,20 @@ export async function resolveListingPolicies(
       returnPolicyId: "mock-return-1",
       merchantLocationKey:
         preferred?.merchantLocationKey?.trim() || SANDBOX_LOCATION_KEY,
+    };
+  }
+
+  const isProduction = process.env.EBAY_ENVIRONMENT === "production";
+
+  // Sandbox : toujours repartir de defaults valides (les IDs user_settings
+  // restent souvent "existants" mais cassés → 404 à publishOffer).
+  if (!isProduction) {
+    const setup = await ensureSellerDefaults(client, { allowCreate: true });
+    return {
+      fulfillmentPolicyId: setup.fulfillmentPolicyId,
+      paymentPolicyId: setup.paymentPolicyId,
+      returnPolicyId: setup.returnPolicyId,
+      merchantLocationKey: setup.merchantLocationKey,
     };
   }
 
@@ -395,10 +419,13 @@ export async function resolveListingPolicies(
   let locationOk = false;
   if (locationPreferred) {
     try {
-      await client.get(
+      const loc = await client.get<{
+        merchantLocationStatus?: string;
+      }>(
         `/sell/inventory/v1/location/${encodeURIComponent(locationPreferred)}`,
       );
-      locationOk = true;
+      locationOk =
+        (loc.merchantLocationStatus ?? "ENABLED").toUpperCase() === "ENABLED";
     } catch {
       locationOk = false;
     }
@@ -413,9 +440,7 @@ export async function resolveListingPolicies(
     };
   }
 
-  const setup = await ensureSellerDefaults(client, {
-    allowCreate: process.env.EBAY_ENVIRONMENT !== "production",
-  });
+  const setup = await ensureSellerDefaults(client, { allowCreate: false });
 
   return {
     fulfillmentPolicyId: fulfillmentOk

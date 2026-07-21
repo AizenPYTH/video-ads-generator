@@ -27,7 +27,8 @@ describe("ensureSellerDefaults guards", () => {
     expect(result.fulfillmentPolicyId).toBeTruthy();
   });
 
-  it("resolveListingPolicies accepts preferred ids in mock mode", async () => {
+  it("resolveListingPolicies ignores preferred ids in sandbox mock", async () => {
+    process.env.EBAY_ENVIRONMENT = "sandbox";
     const { resolveListingPolicies } = await import(
       "@/services/ebay/sandbox-setup"
     );
@@ -39,7 +40,8 @@ describe("ensureSellerDefaults guards", () => {
       returnPolicyId: "r1",
       merchantLocationKey: "loc-1",
     });
-    expect(result.merchantLocationKey).toBe("loc-1");
+    // mock mode court-circuite avant le branchement sandbox
     expect(result.fulfillmentPolicyId).toBe("mock-fulfillment-1");
+    expect(result.merchantLocationKey).toBe("loc-1");
   });
 });
