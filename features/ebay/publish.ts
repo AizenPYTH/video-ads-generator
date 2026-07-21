@@ -8,7 +8,7 @@ import {
   ensureOffer,
   getOffer,
   publishOffer,
-  deleteOffer,
+  recreateOffer,
   isEbayOfferUnavailableError,
 } from "@/services/ebay/inventory";
 import { resolveListingPolicies } from "@/services/ebay/sandbox-setup";
@@ -271,6 +271,7 @@ export async function publishAd(
       merchantLocationKey: policies.merchantLocationKey,
       quantity: ad.quantite,
       marketplaceId: client.marketplace,
+      listingDescription: ad.description!,
     };
 
     // Réutilise l’offre eBay si un essai précédent l’a déjà créée (idempotent)
@@ -312,27 +313,66 @@ export async function publishAd(
       try {
         publishResult = await publishOffer(client, ensured.offerId);
       } catch (publishErr) {
-        // Offre orpheline / invalide (404) : supprimer et recréer une fois
+        // Offre orpheline / invalide (404) : purge TOUTES les offres du SKU + recreate
         if (!isEbayOfferUnavailableError(publishErr)) throw publishErr;
-        console.warn("[publish] offer unavailable, recreating", {
+        console.warn("[publish] offer unavailable, force recreate", {
           adId,
           offerId: ensured.offerId,
+          sku: ad.sku,
         });
+        // Réécrit l’inventaire au cas où l’item aurait disparu côté eBay
+        await createInventoryItem(client, {
+          sku: ad.sku!,
+          title: ad.titre!,
+          description: ad.description!,
+          condition,
+          images: httpsImages,
+          aspects,
+          quantity: ad.quantite,
+        });
+        const recreated = await recreateOffer(client, offerInput);
+        ensured = {
+          offerId: recreated.offerId,
+          alreadyPublished: false,
+        };
         try {
-          await deleteOffer(client, ensured.offerId);
-        } catch {
-          /* ignore */
-        }
-        ensured = await ensureOffer(client, offerInput);
-        if (ensured.alreadyPublished && ensured.listingId) {
-          publishResult = {
-            listingId: ensured.listingId,
-            offerId: ensured.offerId,
-            sku: ad.sku!,
-            status: "PUBLISHED",
-          };
-        } else {
-          publishResult = await publishOffer(client, ensured.offerId);
+          publishResult = await publishOffer(client, recreated.offerId);
+        } catch (retryErr) {
+          if (!isEbayOfferUnavailableError(retryErr)) throw retryErr;
+          // Dernier recours : nouveau SKU (évite l’offre sandbox corrompue)
+          const altSku = `${ad.sku}-r${Date.now().toString(36).slice(-5)}`;
+          console.warn("[publish] recreate still 404, new SKU", { adId, altSku });
+          await createInventoryItem(client, {
+            sku: altSku,
+            title: ad.titre!,
+            description: ad.description!,
+            condition,
+            images: httpsImages,
+            aspects,
+            quantity: ad.quantite,
+          });
+          const altOffer = await recreateOffer(client, {
+            ...offerInput,
+            sku: altSku,
+          });
+          ensured = { offerId: altOffer.offerId, alreadyPublished: false };
+          publishResult = await publishOffer(client, altOffer.offerId);
+          // Persister le nouveau SKU pour les retries suivants
+          await supabase
+            .from("ads")
+            .update({
+              sku: altSku,
+              metadata: {
+                ...((ad.metadata && typeof ad.metadata === "object"
+                  ? ad.metadata
+                  : {}) as Record<string, unknown>),
+                ebay_offer_id: altOffer.offerId,
+                ebay_sku: altSku,
+                ebay_sku_previous: ad.sku,
+              },
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", adId);
         }
       }
     }

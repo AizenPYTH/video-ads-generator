@@ -28,6 +28,8 @@ export interface CreateOfferInput {
   merchantLocationKey: string;
   marketplaceId?: string;
   quantity?: number;
+  /** Description annonce (recommandé pour publishOffer). */
+  listingDescription?: string;
 }
 
 export interface PublishResult {
@@ -69,6 +71,9 @@ function offerBody(input: CreateOfferInput) {
       paymentPolicyId: input.paymentPolicyId,
       returnPolicyId: input.returnPolicyId,
     },
+    ...(input.listingDescription
+      ? { listingDescription: input.listingDescription }
+      : {}),
   };
 }
 
@@ -159,6 +164,80 @@ export async function deleteOffer(
     // Offre déjà publiée / non supprimable — laisser l’appelant gérer
     throw err;
   }
+}
+
+/** Retire une annonce live (nécessaire avant deleteOffer si PUBLISHED). */
+export async function withdrawOffer(
+  client: EbayClient,
+  offerId: string,
+): Promise<void> {
+  if (isEbayMockMode()) {
+    const offer = mockOffers.get(offerId);
+    if (offer) {
+      mockOffers.set(offerId, { ...offer, status: "UNPUBLISHED", listingId: undefined });
+    }
+    return;
+  }
+  try {
+    await client.post(
+      `/sell/inventory/v1/offer/${encodeURIComponent(offerId)}/withdraw`,
+      {},
+    );
+  } catch (err) {
+    if (isEbayOfferUnavailableError(err)) return;
+    // Déjà retirée / non publiée
+    const msg = err instanceof Error ? err.message.toLowerCase() : "";
+    if (msg.includes("not published") || msg.includes("pas publi")) return;
+    throw err;
+  }
+}
+
+function isUsablePublishedListing(offer: EbayOfferSummary): boolean {
+  const listingId = offer.listing?.listingId?.trim();
+  if (!listingId) return false;
+  const status = (offer.listing?.listingStatus ?? "").toUpperCase();
+  if (status === "ENDED" || status === "INACTIVE" || status === "OUT_OF_STOCK") {
+    return false;
+  }
+  // ACTIVE, ou statut absent mais listingId présent
+  return status === "" || status === "ACTIVE" || offer.status === "PUBLISHED";
+}
+
+/**
+ * Supprime / retire toutes les offres d’un SKU (sandbox recovery).
+ */
+export async function purgeOffersForSku(
+  client: EbayClient,
+  sku: string,
+  marketplaceId?: string,
+): Promise<void> {
+  const marketplace = marketplaceId ?? client.marketplace;
+  const existing = await getOffersBySku(client, sku, marketplace);
+  for (const offer of existing) {
+    if (!offer.offerId) continue;
+    try {
+      await withdrawOffer(client, offer.offerId);
+    } catch {
+      /* ignore */
+    }
+    try {
+      await deleteOffer(client, offer.offerId);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/**
+ * Purge les offres du SKU puis crée une offre neuve (évite de republier une offre morte).
+ */
+export async function recreateOffer(
+  client: EbayClient,
+  input: CreateOfferInput,
+): Promise<{ offerId: string }> {
+  const marketplace = input.marketplaceId ?? client.marketplace;
+  await purgeOffersForSku(client, input.sku, marketplace);
+  return createOffer(client, { ...input, marketplaceId: marketplace });
 }
 
 export async function createInventoryItem(
@@ -304,14 +383,8 @@ export async function ensureOffer(
   const marketplace = input.marketplaceId ?? client.marketplace;
   const existing = await getOffersBySku(client, input.sku, marketplace);
 
-  const published = existing.find(
-    (o) =>
-      o.status === "PUBLISHED" ||
-      Boolean(o.listing?.listingId) ||
-      o.listing?.listingStatus === "ACTIVE",
-  );
-  if (published?.offerId) {
-    // Rafraîchir l’offre puis retourner le listing existant
+  const published = existing.find((o) => isUsablePublishedListing(o));
+  if (published?.offerId && published.listing?.listingId) {
     try {
       await updateOffer(client, published.offerId, {
         ...input,
@@ -322,27 +395,65 @@ export async function ensureOffer(
     }
     return {
       offerId: published.offerId,
-      listingId: published.listing?.listingId,
-      alreadyPublished: Boolean(published.listing?.listingId),
+      listingId: published.listing.listingId,
+      alreadyPublished: true,
     };
   }
 
-  const draft = existing.find((o) => o.offerId);
+  // Offres « publiées » mortes / brouillons fantômes → on purge puis on recrée
+  const stale = existing.filter((o) => o.offerId && !isUsablePublishedListing(o));
+  if (stale.length && !published) {
+    // S’il n’y a que des offres non exploitables, mieux vaut repartir de zéro
+    // uniquement quand publish échouera ; ici on tente d’abord update du draft
+  }
+
+  const draft = existing.find(
+    (o) => o.offerId && o.status !== "PUBLISHED" && !o.listing?.listingId,
+  );
   if (draft?.offerId) {
     const live = await getOffer(client, draft.offerId);
     if (!live) {
-      // Entrée fantôme côté liste SKU — on recrée plus bas
       try {
         await deleteOffer(client, draft.offerId);
       } catch {
         /* ignore */
       }
     } else {
-      await updateOffer(client, draft.offerId, {
-        ...input,
-        marketplaceId: marketplace,
-      });
-      return { offerId: draft.offerId, alreadyPublished: false };
+      try {
+        await updateOffer(client, draft.offerId, {
+          ...input,
+          marketplaceId: marketplace,
+        });
+        return { offerId: draft.offerId, alreadyPublished: false };
+      } catch {
+        try {
+          await withdrawOffer(client, draft.offerId);
+        } catch {
+          /* ignore */
+        }
+        try {
+          await deleteOffer(client, draft.offerId);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }
+
+  // Offre PUBLISHED sans listing utilisable → purge
+  const zombie = existing.find(
+    (o) => o.offerId && (o.status === "PUBLISHED" || o.listing?.listingId) && !isUsablePublishedListing(o),
+  );
+  if (zombie?.offerId) {
+    try {
+      await withdrawOffer(client, zombie.offerId);
+    } catch {
+      /* ignore */
+    }
+    try {
+      await deleteOffer(client, zombie.offerId);
+    } catch {
+      /* ignore */
     }
   }
 
@@ -355,8 +466,15 @@ export async function ensureOffer(
   } catch (err) {
     if (!isEbayAlreadyExistsError(err)) throw err;
 
-    // Course : l’offre a été créée entre le GET et le POST
     const retry = await getOffersBySku(client, input.sku, marketplace);
+    const usable = retry.find((o) => isUsablePublishedListing(o));
+    if (usable?.offerId && usable.listing?.listingId) {
+      return {
+        offerId: usable.offerId,
+        listingId: usable.listing.listingId,
+        alreadyPublished: true,
+      };
+    }
     const found = retry[0];
     if (!found?.offerId) throw err;
 
