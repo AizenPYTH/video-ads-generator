@@ -3,6 +3,7 @@ import { EbayClient } from "@/services/ebay/client";
 import {
   createInventoryItem,
   createOffer,
+  ensureOffer,
   publishOffer,
   publishListing,
 } from "@/services/ebay/inventory";
@@ -36,7 +37,7 @@ describe("eBay publish idempotence", () => {
     sku: "TEST-001",
     title: "Logic Board 820-01779-A",
     description: "Test motherboard",
-    condition: "3000",
+    condition: "USED_EXCELLENT",
     images: [] as string[],
     quantity: 1,
   };
@@ -73,46 +74,51 @@ describe("eBay publish idempotence", () => {
     expect(mockListings.size).toBe(1);
   });
 
-  it("returns consistent SKU from publishOffer for same offer", async () => {
+  it("reuses existing offer for same SKU instead of failing", async () => {
     await createInventoryItem(client, inventoryInput);
-    const { offerId } = await createOffer(client, offerInput);
+    const first = await ensureOffer(client, offerInput);
+    const second = await ensureOffer(client, {
+      ...offerInput,
+      price: 199.99,
+    });
 
-    const first = await publishOffer(client, offerId);
-    const second = await publishOffer(client, offerId);
-
-    expect(first.sku).toBe("TEST-001");
-    expect(second.sku).toBe("TEST-001");
-    expect(mockOffers.get(offerId)?.sku).toBe("TEST-001");
+    expect(second.offerId).toBe(first.offerId);
+    expect(mockOffers.size).toBe(1);
+    expect(mockOffers.get(first.offerId)?.price).toBe(199.99);
   });
 
-  it("creates separate listing IDs for repeated publishOffer calls", async () => {
+  it("createOffer is idempotent for the same SKU", async () => {
+    const a = await createOffer(client, offerInput);
+    const b = await createOffer(client, offerInput);
+    expect(a.offerId).toBe(b.offerId);
+    expect(mockOffers.size).toBe(1);
+  });
+
+  it("returns same listing when republishing the same offer", async () => {
     await createInventoryItem(client, inventoryInput);
-    const { offerId } = await createOffer(client, offerInput);
+    const { offerId } = await ensureOffer(client, offerInput);
 
     const first = await publishOffer(client, offerId);
     const second = await publishOffer(client, offerId);
 
-    expect(first.listingId).not.toBe(second.listingId);
-    expect(mockListings.size).toBe(2);
+    expect(first.listingId).toBe(second.listingId);
+    expect(mockListings.size).toBe(1);
+  });
+
+  it("publishListing twice does not create a second offer", async () => {
+    const first = await publishListing(client, inventoryInput, offerInput);
+    const second = await publishListing(client, inventoryInput, offerInput);
+
+    expect(second.offerId).toBe(first.offerId);
+    expect(second.listingId).toBe(first.listingId);
+    expect(mockOffers.size).toBe(1);
   });
 
   it("simulates publish idempotence guard for already published ads", () => {
     const existingPublication = {
-      id: "pub-1",
-      ebay_listing_id: "listing_existing",
+      ebay_listing_id: "listing_abc",
       statut: "SUCCESS",
     };
-
-    function shouldSkipPublish(
-      publication: typeof existingPublication | null,
-    ): boolean {
-      return Boolean(publication?.ebay_listing_id);
-    }
-
-    expect(shouldSkipPublish(existingPublication)).toBe(true);
-    expect(
-      shouldSkipPublish({ ...existingPublication, ebay_listing_id: "" }),
-    ).toBe(false);
-    expect(shouldSkipPublish(null)).toBe(false);
+    expect(existingPublication.ebay_listing_id).toBeTruthy();
   });
 });

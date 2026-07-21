@@ -7,7 +7,7 @@ import { EbayClient } from "@/services/ebay/client";
 import { decrypt } from "@/lib/crypto/encryption";
 import {
   createInventoryItem,
-  createOffer,
+  ensureOffer,
   publishOffer,
 } from "@/services/ebay/inventory";
 import { resolveListingPolicies } from "@/services/ebay/sandbox-setup";
@@ -250,9 +250,9 @@ export async function publishAd(
 
     await supabase.from("ads").update({ statut: "INVENTORY_CREATED" }).eq("id", adId);
 
-    const { offerId } = await createOffer(client, {
+    const offerInput = {
       sku: ad.sku!,
-      price: parseFloat(ad.prix_vente!),
+      price: parseFloat(String(ad.prix_vente)),
       currency: settings?.devise ?? "EUR",
       categoryId: ad.ebay_category_id!,
       fulfillmentPolicyId: policies.fulfillmentPolicyId,
@@ -260,11 +260,37 @@ export async function publishAd(
       returnPolicyId: policies.returnPolicyId,
       merchantLocationKey: policies.merchantLocationKey,
       quantity: ad.quantite,
-    });
+      marketplaceId: client.marketplace,
+    };
 
-    await supabase.from("ads").update({ statut: "OFFER_CREATED" }).eq("id", adId);
+    // Réutilise l’offre eBay si un essai précédent l’a déjà créée (idempotent)
+    const ensured = await ensureOffer(client, offerInput);
 
-    const publishResult = await publishOffer(client, offerId);
+    await supabase
+      .from("ads")
+      .update({
+        statut: ensured.alreadyPublished ? "PUBLISHED" : "OFFER_CREATED",
+        metadata: {
+          ...((ad.metadata && typeof ad.metadata === "object"
+            ? ad.metadata
+            : {}) as Record<string, unknown>),
+          ebay_offer_id: ensured.offerId,
+          ebay_sku: ad.sku,
+          ...(ensured.listingId ? { ebay_listing_id: ensured.listingId } : {}),
+        },
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", adId);
+
+    const publishResult =
+      ensured.alreadyPublished && ensured.listingId
+        ? {
+            listingId: ensured.listingId,
+            offerId: ensured.offerId,
+            sku: ad.sku!,
+            status: "PUBLISHED",
+          }
+        : await publishOffer(client, ensured.offerId);
 
     const { data: publication } = await supabase
       .from("listing_publications")
@@ -280,7 +306,19 @@ export async function publishAd(
 
     await supabase
       .from("ads")
-      .update({ statut: "PUBLISHED" })
+      .update({
+        statut: "PUBLISHED",
+        status: "published",
+        metadata: {
+          ...((ad.metadata && typeof ad.metadata === "object"
+            ? ad.metadata
+            : {}) as Record<string, unknown>),
+          ebay_offer_id: publishResult.offerId,
+          ebay_listing_id: publishResult.listingId,
+          ebay_sku: ad.sku,
+        },
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", adId);
 
     await supabase.from("ad_history").insert({
@@ -289,7 +327,11 @@ export async function publishAd(
       statut_avant: "SENDING_TO_EBAY",
       statut_apres: "PUBLISHED",
       action: "PUBLISH",
-      details: { listingId: publishResult.listingId, offerId },
+      details: {
+        listingId: publishResult.listingId,
+        offerId: publishResult.offerId,
+        reusedOffer: Boolean(ensured.alreadyPublished || ensured.offerId),
+      },
     });
 
     if (publication) {
@@ -303,10 +345,12 @@ export async function publishAd(
 
     revalidatePath("/ads");
     revalidatePath(`/ads/${adId}`);
+    revalidatePath("/dashboard/annonces");
+    revalidatePath(`/dashboard/annonces/${adId}`);
 
     return {
       success: true,
-      data: { listingId: publishResult.listingId, offerId },
+      data: { listingId: publishResult.listingId, offerId: publishResult.offerId },
     };
   } catch (err) {
     const supabase = await createClient();
@@ -320,9 +364,33 @@ export async function publishAd(
       })
       .eq("id", adId);
 
-    if (err instanceof AppError) {
-      return { error: err.message };
-    }
-    return { error: err instanceof Error ? err.message : "Erreur de publication." };
+    const friendly = humanizePublishError(err);
+    return { error: friendly };
   }
+}
+
+function humanizePublishError(err: unknown): string {
+  if (!(err instanceof Error)) return "Erreur de publication.";
+  const msg = err.message;
+
+  if (/existe déjà|already exists|offer entity/i.test(msg)) {
+    return "Une offre eBay existe déjà pour ce SKU — réessayez, la publication va la réutiliser automatiquement.";
+  }
+  if (/already published|déjà publi/i.test(msg)) {
+    return "Cette annonce semble déjà publiée sur eBay. Rechargez la page.";
+  }
+  if (/marque compatible|compatible brand|item specific|caractéristique/i.test(msg)) {
+    return msg;
+  }
+  if (/policy|politique/i.test(msg)) {
+    return `Politiques eBay invalides ou manquantes. ${msg}`;
+  }
+  if (/location|lieu|merchant/i.test(msg)) {
+    return `Lieu d’expédition eBay manquant ou invalide. ${msg}`;
+  }
+  if (/image|https/i.test(msg)) {
+    return msg;
+  }
+  if (err instanceof AppError) return msg;
+  return msg || "Erreur de publication.";
 }
