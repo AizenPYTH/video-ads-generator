@@ -1,6 +1,6 @@
 import type { Ad } from "@/types/ads";
 import type { IdentificationResult } from "@/types/identification";
-import { isPublishableStatus } from "./status";
+import { buildAdChecklist } from "./recalculate-status";
 
 export type AdValidationError = {
   field: string;
@@ -18,77 +18,77 @@ function parseIdentification(result: unknown): IdentificationResult | null {
   return result as IdentificationResult;
 }
 
+/**
+ * Publier = champs obligatoires OK.
+ * Le statut DB (FAILED / SENDING_TO_EBAY / …) ne bloque plus : ce sont des retries.
+ */
 export function validateAdForPublish(ad: Ad): AdValidationResult {
   const errors: AdValidationError[] = [];
   const warnings: string[] = [];
 
-  if (!isPublishableStatus(ad.statut)) {
+  if (ad.statut === "PUBLISHED") {
     errors.push({
       field: "statut",
-      message:
-        "L'annonce doit être « Prêt » pour être publiée. Complétez les champs manquants.",
+      message: "Cette annonce est déjà publiée sur eBay.",
     });
   }
 
-  if (!ad.titre?.trim()) {
-    errors.push({ field: "titre", message: "Le titre est obligatoire." });
-  } else if (ad.titre.length > 80) {
+  const checklist = buildAdChecklist({
+    titre: ad.titre,
+    description: ad.description,
+    prix_vente: ad.prix_vente,
+    quantite: ad.quantite,
+    ebay_category_id: ad.ebay_category_id,
+    ebay_condition_id: ad.ebay_condition_id,
+    sku: ad.sku,
+  });
+
+  for (const item of checklist) {
+    if (!item.ok) {
+      errors.push({
+        field: item.field,
+        message: `${item.label} est obligatoire.`,
+      });
+    }
+  }
+
+  if (!String(ad.description ?? "").trim()) {
+    errors.push({
+      field: "description",
+      message: "La description est obligatoire.",
+    });
+  }
+
+  const title = ad.titre == null ? "" : String(ad.titre);
+  if (title.length > 80) {
     errors.push({
       field: "titre",
       message: "Le titre ne doit pas dépasser 80 caractères.",
     });
   }
 
-  if (!ad.description?.trim()) {
-    errors.push({ field: "description", message: "La description est obligatoire." });
-  }
-
-  if (!ad.prix_vente || Number(ad.prix_vente) <= 0) {
-    errors.push({
-      field: "prix_vente",
-      message: "Le prix de vente doit être supérieur à 0.",
-    });
-  }
-
-  if (!ad.ebay_category_id?.trim()) {
-    errors.push({
-      field: "ebay_category_id",
-      message: "La catégorie eBay est obligatoire.",
-    });
-  }
-
-  if (!ad.ebay_condition_id?.trim()) {
-    errors.push({
-      field: "ebay_condition_id",
-      message: "L'état eBay est obligatoire.",
-    });
-  }
-
-  if (!ad.sku?.trim()) {
-    errors.push({ field: "sku", message: "Le SKU est obligatoire." });
-  }
-
-  if (ad.quantite < 1) {
-    errors.push({
-      field: "quantite",
-      message: "La quantité doit être au moins 1.",
-    });
-  }
-
   const identification = parseIdentification(ad.resultat_identification);
 
   if (!identification) {
-    warnings.push("Aucun résultat d'identification associé à cette annonce.");
+    warnings.push(
+      "Pas d’analyse photo associée (normal pour un import URL/CSV).",
+    );
   } else {
     if (identification.needsReview) {
       warnings.push(
-        "L'identification nécessite une vérification manuelle avant publication.",
+        "L'identification suggère une vérification manuelle avant publication.",
       );
     }
-    if (identification.confidence.global < 0.5) {
+    if (
+      identification.confidence?.global != null &&
+      identification.confidence.global < 0.5
+    ) {
       warnings.push("La confiance d'identification est faible.");
     }
-    if (identification.warnings.length > 0) {
+    if (
+      Array.isArray(identification.warnings) &&
+      identification.warnings.length > 0
+    ) {
       warnings.push(...identification.warnings);
     }
   }

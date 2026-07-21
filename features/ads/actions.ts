@@ -171,27 +171,41 @@ export async function updateAd(
           })
         : null;
 
+    const toNullableString = (value: unknown): string | null => {
+      if (value == null) return null;
+      const text = String(value).trim();
+      return text.length ? text : null;
+    };
+
     const next = {
-      titre: input.titre !== undefined ? input.titre : existing.titre,
+      titre:
+        input.titre !== undefined
+          ? toNullableString(input.titre)
+          : toNullableString(existing.titre),
       description:
         input.description !== undefined
-          ? input.description
-          : existing.description,
+          ? toNullableString(input.description)
+          : toNullableString(existing.description),
       prix_vente:
         input.prix_vente !== undefined
-          ? input.prix_vente
-          : existing.prix_vente,
+          ? toNullableString(input.prix_vente)
+          : toNullableString(existing.prix_vente),
       quantite:
-        input.quantite !== undefined ? input.quantite : existing.quantite,
-      sku: input.sku !== undefined ? input.sku : existing.sku,
+        input.quantite !== undefined
+          ? Number(input.quantite) || 1
+          : Number(existing.quantite) || 1,
+      sku:
+        input.sku !== undefined
+          ? toNullableString(input.sku)
+          : toNullableString(existing.sku),
       ebay_category_id:
         input.ebay_category_id !== undefined
-          ? input.ebay_category_id
-          : existing.ebay_category_id,
+          ? toNullableString(input.ebay_category_id)
+          : toNullableString(existing.ebay_category_id),
       ebay_condition_id:
         input.ebay_condition_id !== undefined
-          ? input.ebay_condition_id
-          : existing.ebay_condition_id,
+          ? toNullableString(input.ebay_condition_id)
+          : toNullableString(existing.ebay_condition_id),
     };
 
     const computedStatut =
@@ -215,7 +229,6 @@ export async function updateAd(
     const { error } = await supabase
       .from("ads")
       .update({
-        ...input,
         titre: next.titre,
         title: next.titre,
         description: next.description,
@@ -225,6 +238,13 @@ export async function updateAd(
         sku: next.sku,
         ebay_category_id: next.ebay_category_id,
         ebay_condition_id: next.ebay_condition_id,
+        ...(input.notes !== undefined ? { notes: input.notes } : {}),
+        ...(input.resultat_identification !== undefined
+          ? { resultat_identification: input.resultat_identification }
+          : {}),
+        ...(input.prix_achat !== undefined
+          ? { prix_achat: toNullableString(input.prix_achat) }
+          : {}),
         statut: computedStatut,
         status: computedStatut === "READY" ? "ready" : "draft",
         updated_at: new Date().toISOString(),

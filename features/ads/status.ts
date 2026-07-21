@@ -11,10 +11,16 @@ export type AdStatusGroup =
 
 export const AD_STATUS_GROUPS: Record<AdStatusGroup, AdStatus[]> = {
   Brouillons: ["DRAFT", "ANALYZING"],
-  Prêtes: ["READY", "SENDING_TO_EBAY"],
+  Prêtes: [
+    "READY",
+    "SENDING_TO_EBAY",
+    "INVENTORY_CREATED",
+    "OFFER_CREATED",
+    "FAILED",
+  ],
   Publiées: ["PUBLISHED", "ENDED"],
   "À vérifier": ["NEEDS_REVIEW"],
-  Erreurs: ["FAILED"],
+  Erreurs: [],
 };
 
 const STATUS_TO_GROUP = new Map<AdStatus, AdStatusGroup>(
@@ -36,9 +42,26 @@ export function getStatusesForGroup(group: AdStatusGroup): AdStatus[] {
 }
 
 export function isPublishableStatus(status: AdStatus): boolean {
-  return status === "READY";
+  // READY = prêt. Les autres = retry après un essai eBay partiel / échoué.
+  return [
+    "READY",
+    "FAILED",
+    "SENDING_TO_EBAY",
+    "INVENTORY_CREATED",
+    "OFFER_CREATED",
+    "VALIDATING",
+    "PUBLISHING",
+  ].includes(status);
 }
 
 export function isEditableStatus(status: AdStatus): boolean {
-  return ["DRAFT", "NEEDS_REVIEW", "READY", "FAILED"].includes(status);
+  return [
+    "DRAFT",
+    "NEEDS_REVIEW",
+    "READY",
+    "FAILED",
+    "SENDING_TO_EBAY",
+    "INVENTORY_CREATED",
+    "OFFER_CREATED",
+  ].includes(status);
 }

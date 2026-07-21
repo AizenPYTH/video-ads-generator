@@ -27,6 +27,24 @@ function firstParam(
   return value;
 }
 
+function humanizeEbayError(error: string): string {
+  const lower = error.toLowerCase();
+  if (lower.includes("état oauth") || lower.includes("oauth state")) {
+    return "La session de connexion a expiré. Revenez sur Compte eBay et cliquez à nouveau sur Connecter.";
+  }
+  if (lower.includes("encryption_key")) {
+    return "Configuration serveur incomplète (ENCRYPTION_KEY). Contactez l’administrateur.";
+  }
+  if (lower.includes("token exchange") || lower.includes("credentials")) {
+    return "Échange de jeton eBay refusé. Vérifiez Client ID, Secret, RuName et l’environnement (sandbox/production).";
+  }
+  // Affiche le détail Postgres / crypto pour pouvoir corriger vite.
+  if (error.length > 8 && error.length < 280) {
+    return error;
+  }
+  return "La connexion n'a pas pu être finalisée. Vous pouvez réessayer depuis votre espace.";
+}
+
 export default async function EbayOAuthResultPage({ searchParams }: PageProps) {
   const params = await searchParams;
   const error = firstParam(params.error);
@@ -52,8 +70,7 @@ export default async function EbayOAuthResultPage({ searchParams }: PageProps) {
     iconClass = "text-destructive";
   } else if (error) {
     title = "Échec de la connexion eBay";
-    description =
-      "La connexion n'a pas pu être finalisée. Vous pouvez réessayer depuis votre espace.";
+    description = humanizeEbayError(error);
     Icon = XCircle;
     iconClass = "text-destructive";
   }

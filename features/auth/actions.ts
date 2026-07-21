@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export type AuthActionResult = {
   error?: string;
@@ -10,72 +11,97 @@ export type AuthActionResult = {
   redirectTo?: string;
 };
 
+async function findUserIdByEmail(email: string): Promise<string | null> {
+  const admin = createAdminClient();
+  const normalized = email.trim().toLowerCase();
+  const perPage = 200;
+
+  for (let page = 1; page <= 10; page += 1) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+    if (error) throw error;
+
+    const match = data.users.find(
+      (user) => user.email?.trim().toLowerCase() === normalized,
+    );
+    if (match) return match.id;
+
+    if (data.users.length < perPage) break;
+  }
+
+  return null;
+}
+
+async function confirmUserEmail(userId: string): Promise<void> {
+  const admin = createAdminClient();
+  const { error } = await admin.auth.admin.updateUserById(userId, {
+    email_confirm: true,
+  });
+  if (error) throw error;
+}
+
 export async function signUp(formData: FormData): Promise<AuthActionResult> {
   try {
-    const email = formData.get("email") as string;
-    const password = formData.get("password") as string;
-    const fullName = formData.get("fullName") as string;
+    const email = String(formData.get("email") ?? "")
+      .trim()
+      .toLowerCase();
+    const password = String(formData.get("password") ?? "");
+    const fullName = String(formData.get("fullName") ?? "").trim();
 
     if (!email || !password) {
       return { error: "L'email et le mot de passe sont requis." };
     }
 
-    const supabase = await createClient();
-    const appUrl =
-      process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
-      (process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : "http://localhost:3000");
+    if (password.length < 8) {
+      return { error: "Le mot de passe doit contenir au moins 8 caractères." };
+    }
 
-    const { data, error } = await supabase.auth.signUp({
+    const admin = createAdminClient();
+
+    // Création confirmée côté serveur : pas d'email Supabase requis.
+    const { data: created, error: createError } =
+      await admin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { full_name: fullName || undefined },
+      });
+
+    if (createError) {
+      const message = createError.message.toLowerCase();
+      if (
+        message.includes("already") ||
+        message.includes("registered") ||
+        message.includes("exists")
+      ) {
+        return {
+          error:
+            "Un compte existe déjà avec cet email. Connectez-vous, ou utilisez « Mot de passe oublié ».",
+        };
+      }
+      return { error: translateAuthError(createError.message) };
+    }
+
+    const supabase = await createClient();
+    const { error: signInError } = await supabase.auth.signInWithPassword({
       email,
       password,
-      options: {
-        data: { full_name: fullName },
-        emailRedirectTo: `${appUrl}/auth/callback`,
-      },
     });
 
-    if (error) {
-      return { error: translateAuthError(error.message) };
+    if (signInError) {
+      return { error: translateAuthError(signInError.message) };
     }
 
-    // Les emails Supabase (plan free) arrivent souvent en retard / spam.
-    // On confirme le compte côté serveur puis on connecte directement.
-    if (data.user && !data.session) {
-      try {
-        const { createAdminClient } = await import("@/lib/supabase/admin");
-        const admin = createAdminClient();
-        await admin.auth.admin.updateUserById(data.user.id, {
-          email_confirm: true,
-        });
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-  if (!signInError) {
-        revalidatePath("/", "layout");
-        return { success: true, redirectTo: "/dashboard" };
-      }
-    } catch {
-      // fallback: page de vérification
-    }
-  }
-
-  if (data.session) {
-    revalidatePath("/", "layout");
     try {
       const { ensureFreeSubscription } = await import(
         "@/lib/billing/ensure-subscription"
       );
-      await ensureFreeSubscription(data.session.user.id);
+      await ensureFreeSubscription(created.user.id);
     } catch {
       // non bloquant
     }
-    return { success: true, redirectTo: "/dashboard" };
-  }
 
-  return { success: true, redirectTo: "/verify-email" };
+    revalidatePath("/", "layout");
+    return { success: true, redirectTo: "/dashboard" };
   } catch (err) {
     return {
       error:
@@ -88,8 +114,10 @@ export async function signUp(formData: FormData): Promise<AuthActionResult> {
 
 export async function signIn(formData: FormData): Promise<AuthActionResult> {
   try {
-    const email = formData.get("email") as string;
-    const password = formData.get("password") as string;
+    const email = String(formData.get("email") ?? "")
+      .trim()
+      .toLowerCase();
+    const password = String(formData.get("password") ?? "");
 
     if (!email || !password) {
       return { error: "L'email et le mot de passe sont requis." };
@@ -97,10 +125,30 @@ export async function signIn(formData: FormData): Promise<AuthActionResult> {
 
     const supabase = await createClient();
 
-    const { error } = await supabase.auth.signInWithPassword({
+    let { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
+
+    // Compte créé avant le fix : email non confirmé → on confirme puis on réessaie.
+    if (
+      error &&
+      (error.message === "Email not confirmed" ||
+        error.message === "Invalid login credentials")
+    ) {
+      try {
+        const userId = await findUserIdByEmail(email);
+        if (userId) {
+          await confirmUserEmail(userId);
+          ({ error } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+          }));
+        }
+      } catch {
+        // on garde l'erreur d'origine
+      }
+    }
 
     if (error) {
       return { error: translateAuthError(error.message) };
@@ -140,18 +188,25 @@ export async function signOut(): Promise<void> {
 }
 
 export async function resetPassword(
-  formData: FormData
+  formData: FormData,
 ): Promise<AuthActionResult> {
-  const email = formData.get("email") as string;
+  const email = String(formData.get("email") ?? "")
+    .trim()
+    .toLowerCase();
 
   if (!email) {
     return { error: "L'email est requis." };
   }
 
   const supabase = await createClient();
+  const appUrl =
+    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
+    (process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : "http://localhost:3000");
 
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? ""}/reset-password`,
+    redirectTo: `${appUrl}/reset-password`,
   });
 
   if (error) {
@@ -162,7 +217,7 @@ export async function resetPassword(
 }
 
 export async function updatePassword(
-  formData: FormData
+  formData: FormData,
 ): Promise<AuthActionResult> {
   const password = formData.get("password") as string;
   const confirmPassword = formData.get("confirmPassword") as string;
@@ -195,7 +250,8 @@ function translateAuthError(message: string): string {
   const translations: Record<string, string> = {
     "Invalid login credentials": "Email ou mot de passe incorrect.",
     "User already registered": "Un compte existe déjà avec cet email.",
-    "Email not confirmed": "Veuillez confirmer votre email avant de vous connecter.",
+    "Email not confirmed":
+      "Veuillez confirmer votre email avant de vous connecter.",
     "Password should be at least 6 characters":
       "Le mot de passe doit contenir au moins 6 caractères.",
   };

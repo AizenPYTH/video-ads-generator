@@ -10,10 +10,13 @@ import {
   createOffer,
   publishOffer,
 } from "@/services/ebay/inventory";
+import { resolveListingPolicies } from "@/services/ebay/sandbox-setup";
+import { toEbayInventoryCondition } from "@/services/ebay/condition";
 import { validateAdForPublish } from "@/features/ads/validation";
 import { fetchAdById } from "@/features/ads/queries";
 import type { IdentificationResult } from "@/types/identification";
 import type { AdImagesRow } from "@/types/database";
+import { AppError } from "@/lib/errors/app-error";
 
 export type PublishActionResult<T = void> = {
   error?: string;
@@ -40,28 +43,22 @@ async function getEbayAccessToken(userId: string): Promise<string | null> {
 
   const { data: account } = await supabase
     .from("ebay_accounts")
-    .select("id")
+    .select("access_token_encrypted, token_expires_at")
     .eq("user_id", userId)
-    .eq("est_actif", true)
+    .eq("is_active", true)
     .limit(1)
     .maybeSingle();
 
-  if (!account) return null;
+  if (!account?.access_token_encrypted) return null;
 
-  const { data: token } = await supabase
-    .from("ebay_tokens")
-    .select("access_token, expires_at")
-    .eq("ebay_account_id", account.id)
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (!token) return null;
-
-  if (new Date(token.expires_at) < new Date()) {
+  if (
+    account.token_expires_at &&
+    new Date(account.token_expires_at) < new Date()
+  ) {
     return null;
   }
 
-  return decrypt(token.access_token);
+  return decrypt(account.access_token_encrypted);
 }
 
 async function getAdImages(userId: string, adId: string): Promise<string[]> {
@@ -121,6 +118,19 @@ export async function publishAd(
 
     const supabase = await createClient();
 
+    // Remet READY avant retry (FAILED / SENDING_TO_EBAY / etc.)
+    if (ad.statut !== "READY") {
+      await supabase
+        .from("ads")
+        .update({
+          statut: "READY",
+          status: "ready",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", adId)
+        .eq("user_id", userId);
+    }
+
     const { data: existingPublication } = await supabase
       .from("listing_publications")
       .select("id, ebay_listing_id, statut")
@@ -144,14 +154,23 @@ export async function publishAd(
       return { error: "Compte eBay non connecté ou token expiré." };
     }
 
+    const settings = await getUserSettings(userId);
+    const images = await getAdImages(userId, adId);
+    const identification = ad.resultat_identification as IdentificationResult | null;
+
+    // Filtrer les images non https (eBay refuse http / data / relatives)
+    const httpsImages = images.filter((u) => /^https:\/\//i.test(u)).slice(0, 12);
+    if (httpsImages.length === 0) {
+      return {
+        error:
+          "Au moins une image HTTPS est requise pour publier sur eBay.",
+      };
+    }
+
     await supabase
       .from("ads")
       .update({ statut: "SENDING_TO_EBAY" })
       .eq("id", adId);
-
-    const settings = await getUserSettings(userId);
-    const images = await getAdImages(userId, adId);
-    const identification = ad.resultat_identification as IdentificationResult | null;
 
     const client = new EbayClient({ accessToken });
 
@@ -162,12 +181,32 @@ export async function publishAd(
       }
     }
 
+    const condition = toEbayInventoryCondition(ad.ebay_condition_id);
+    const policies = await resolveListingPolicies(client, {
+      fulfillmentPolicyId: settings?.politique_expedition_par_defaut,
+      paymentPolicyId: settings?.politique_paiement_par_defaut,
+      returnPolicyId: settings?.politique_retour_par_defaut,
+      merchantLocationKey: settings?.lieu_expedition_par_defaut,
+    });
+
+    await supabase.from("user_settings").upsert(
+      {
+        user_id: userId,
+        politique_expedition_par_defaut: policies.fulfillmentPolicyId,
+        politique_paiement_par_defaut: policies.paymentPolicyId,
+        politique_retour_par_defaut: policies.returnPolicyId,
+        lieu_expedition_par_defaut: policies.merchantLocationKey,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id" },
+    );
+
     await createInventoryItem(client, {
       sku: ad.sku!,
       title: ad.titre!,
       description: ad.description!,
-      condition: ad.ebay_condition_id!,
-      images,
+      condition,
+      images: httpsImages,
       aspects,
       quantity: ad.quantite,
     });
@@ -179,9 +218,11 @@ export async function publishAd(
       price: parseFloat(ad.prix_vente!),
       currency: settings?.devise ?? "EUR",
       categoryId: ad.ebay_category_id!,
-      fulfillmentPolicyId: settings?.politique_expedition_par_defaut ?? "",
-      paymentPolicyId: settings?.politique_paiement_par_defaut ?? "",
-      returnPolicyId: settings?.politique_retour_par_defaut ?? "",
+      fulfillmentPolicyId: policies.fulfillmentPolicyId,
+      paymentPolicyId: policies.paymentPolicyId,
+      returnPolicyId: policies.returnPolicyId,
+      merchantLocationKey: policies.merchantLocationKey,
+      quantity: ad.quantite,
     });
 
     await supabase.from("ads").update({ statut: "OFFER_CREATED" }).eq("id", adId);
@@ -232,11 +273,19 @@ export async function publishAd(
     };
   } catch (err) {
     const supabase = await createClient();
+    // Garder l’annonce republable (Prêtes) après un échec eBay
     await supabase
       .from("ads")
-      .update({ statut: "FAILED" })
+      .update({
+        statut: "READY",
+        status: "ready",
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", adId);
 
+    if (err instanceof AppError) {
+      return { error: err.message };
+    }
     return { error: err instanceof Error ? err.message : "Erreur de publication." };
   }
 }

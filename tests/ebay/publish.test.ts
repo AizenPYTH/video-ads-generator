@@ -49,6 +49,7 @@ describe("eBay publish idempotence", () => {
     fulfillmentPolicyId: "mock-fulfillment-1",
     paymentPolicyId: "mock-payment-1",
     returnPolicyId: "mock-return-1",
+    merchantLocationKey: "default_fr",
   };
 
   it("overwrites inventory item for same SKU (upsert semantics)", async () => {

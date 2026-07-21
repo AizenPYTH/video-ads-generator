@@ -229,11 +229,15 @@ export type EbayAccountsRow = {
   id: UUID;
   user_id: UUID;
   ebay_user_id: string;
-  nom_compte: string | null;
-  marche: string;
-  est_actif: boolean;
+  marketplace: string;
+  access_token_encrypted: string;
+  refresh_token_encrypted: string;
+  token_expires_at: Timestamp;
+  scopes: string[];
+  is_active: boolean;
   created_at: Timestamp;
   updated_at: Timestamp;
+  connected_at: Timestamp | null;
 };
 
 export type EbayPoliciesRow = {

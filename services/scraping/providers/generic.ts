@@ -16,10 +16,10 @@ export class GenericProductProvider implements ProductPageProvider {
     const { html } = await fetchWithScrapingBee({
       url,
       renderJs: true,
-      // Amazon : premium auto dans scrapingbee (désactiver via SCRAPINGBEE_PREMIUM=false)
-      countryCode: "fr",
-      waitMs: isAmazon ? 3500 : undefined,
-      blockResources: isAmazon ? false : undefined,
+      premiumProxy: true,
+      countryCode: isAmazon ? undefined : "fr",
+      waitMs: isAmazon ? 3500 : 1500,
+      blockResources: false,
     });
 
     const jsonLd = extractJsonLd(html);

@@ -151,13 +151,19 @@ export default async function AnnonceDetailPage({ params }: PageProps) {
       initial={{
         titre: ad.titre ?? "",
         description: ad.description ?? "",
-        prix_vente: ad.prix_vente ?? "",
+        // NUMERIC Postgres → number via PostgREST : toujours stringifier
+        prix_vente:
+          ad.prix_vente == null || ad.prix_vente === ""
+            ? ""
+            : String(ad.prix_vente),
         quantite: ad.quantite ?? 1,
         ebay_condition_id: ad.ebay_condition_id
           ? String(ad.ebay_condition_id)
           : "1000",
-        ebay_category_id: ad.ebay_category_id ?? "",
-        sku: ad.sku ?? "",
+        ebay_category_id: ad.ebay_category_id
+          ? String(ad.ebay_category_id)
+          : "",
+        sku: ad.sku ? String(ad.sku) : "",
         statut: ad.statut,
       }}
       images={images.map((i) => ({

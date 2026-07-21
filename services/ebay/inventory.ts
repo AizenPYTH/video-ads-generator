@@ -20,7 +20,9 @@ export interface CreateOfferInput {
   fulfillmentPolicyId: string;
   paymentPolicyId: string;
   returnPolicyId: string;
+  merchantLocationKey: string;
   marketplaceId?: string;
+  quantity?: number;
 }
 
 export interface PublishResult {
@@ -73,13 +75,15 @@ export async function createOffer(
       sku: input.sku,
       marketplaceId: input.marketplaceId ?? client.marketplace,
       format: "FIXED_PRICE",
+      availableQuantity: input.quantity ?? 1,
       pricingSummary: {
         price: {
-          value: String(input.price),
+          value: Number(input.price).toFixed(2),
           currency: input.currency,
         },
       },
-      categoryId: input.categoryId,
+      categoryId: String(input.categoryId),
+      merchantLocationKey: input.merchantLocationKey,
       listingPolicies: {
         fulfillmentPolicyId: input.fulfillmentPolicyId,
         paymentPolicyId: input.paymentPolicyId,

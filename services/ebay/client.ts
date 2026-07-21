@@ -75,9 +75,12 @@ export class EbayClient {
     }
 
     if (!response.ok) {
+      const detailMessage = extractEbayErrorMessage(data);
       throw new AppError(
         "EBAY_ERROR",
-        `eBay API error: ${response.status}`,
+        detailMessage
+          ? `eBay API error: ${response.status} — ${detailMessage}`
+          : `eBay API error: ${response.status}`,
         {
           status: response.status,
           details: data,
@@ -103,4 +106,28 @@ export class EbayClient {
   async delete<T>(path: string): Promise<T> {
     return this.request<T>("DELETE", path);
   }
+}
+
+function extractEbayErrorMessage(data: unknown): string | null {
+  if (!data || typeof data !== "object") {
+    return typeof data === "string" ? data.slice(0, 300) : null;
+  }
+
+  const record = data as {
+    errors?: Array<{ message?: string; longMessage?: string; errorId?: number }>;
+    error?: string;
+    message?: string;
+  };
+
+  if (Array.isArray(record.errors) && record.errors.length > 0) {
+    return record.errors
+      .map((e) => e.longMessage || e.message || String(e.errorId ?? ""))
+      .filter(Boolean)
+      .join(" | ")
+      .slice(0, 400);
+  }
+
+  if (typeof record.message === "string") return record.message.slice(0, 300);
+  if (typeof record.error === "string") return record.error.slice(0, 300);
+  return null;
 }

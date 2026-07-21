@@ -12,12 +12,32 @@ export interface EbayTokens {
 }
 
 function getEbayAuthUrl(): string {
-  return (
-    process.env.EBAY_AUTH_URL ??
-    (process.env.EBAY_ENVIRONMENT === "production"
-      ? "https://auth.ebay.com"
-      : "https://auth.sandbox.ebay.com")
-  );
+  const configured = process.env.EBAY_AUTH_URL?.trim();
+  if (configured) {
+    // Ne jamais utiliser l'URL API pour l'authorize (et inversement).
+    if (configured.includes("api.")) {
+      return process.env.EBAY_ENVIRONMENT === "production"
+        ? "https://auth.ebay.com"
+        : "https://auth.sandbox.ebay.com";
+    }
+    return configured.replace(/\/$/, "");
+  }
+
+  return process.env.EBAY_ENVIRONMENT === "production"
+    ? "https://auth.ebay.com"
+    : "https://auth.sandbox.ebay.com";
+}
+
+/** Token endpoint = api.ebay.com (pas auth.ebay.com). */
+function getEbayTokenUrl(): string {
+  const configured = process.env.EBAY_API_URL?.trim();
+  if (configured) {
+    return `${configured.replace(/\/$/, "")}/identity/v1/oauth2/token`;
+  }
+
+  return process.env.EBAY_ENVIRONMENT === "production"
+    ? "https://api.ebay.com/identity/v1/oauth2/token"
+    : "https://api.sandbox.ebay.com/identity/v1/oauth2/token";
 }
 
 function getClientCredentials() {
@@ -57,6 +77,7 @@ export function getEbayAuthorizationUrl(state: string): string {
     "https://api.ebay.com/oauth/api_scope",
     "https://api.ebay.com/oauth/api_scope/sell.inventory",
     "https://api.ebay.com/oauth/api_scope/sell.account",
+    "https://api.ebay.com/oauth/api_scope/commerce.identity.readonly",
   ];
 
   const url = new URL(`${getEbayAuthUrl()}/oauth2/authorize`);
@@ -79,7 +100,7 @@ async function exchangeToken(
   const { clientId, clientSecret } = getClientCredentials();
   const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
 
-  const response = await fetch(`${getEbayAuthUrl()}/identity/v1/oauth2/token`, {
+  const response = await fetch(getEbayTokenUrl(), {
     method: "POST",
     headers: {
       Authorization: `Basic ${credentials}`,
@@ -136,16 +157,17 @@ export async function storeEbayTokens(
 ): Promise<void> {
   const supabase = createAdminClient();
 
-  const { error } = await supabase.from("ebay_connections").upsert(
-    {
-      workspace_id: workspaceId,
+  const { error } = await supabase
+    .from("ebay_accounts")
+    .update({
       access_token_encrypted: encrypt(tokens.accessToken),
-      refresh_token_encrypted: encrypt(tokens.refreshToken),
-      expires_at: tokens.expiresAt.toISOString(),
+      refresh_token_encrypted: encrypt(tokens.refreshToken || ""),
+      token_expires_at: tokens.expiresAt.toISOString(),
       updated_at: new Date().toISOString(),
-    },
-    { onConflict: "workspace_id" },
-  );
+      is_active: true,
+    })
+    .eq("user_id", workspaceId)
+    .eq("is_active", true);
 
   if (error) {
     throw AppError.internal("Failed to store eBay tokens", error);
@@ -156,25 +178,35 @@ export async function getEbayTokens(workspaceId: string): Promise<EbayTokens | n
   const supabase = createAdminClient();
 
   const { data, error } = await supabase
-    .from("ebay_connections")
-    .select("*")
-    .eq("workspace_id", workspaceId)
+    .from("ebay_accounts")
+    .select(
+      "access_token_encrypted, refresh_token_encrypted, token_expires_at",
+    )
+    .eq("user_id", workspaceId)
+    .eq("is_active", true)
+    .limit(1)
     .maybeSingle();
 
-  if (error || !data) {
+  if (error || !data?.access_token_encrypted) {
     return null;
   }
 
-  const expiresAt = new Date(data.expires_at);
-  let accessToken = decrypt(data.access_token_encrypted);
-  let refreshToken = decrypt(data.refresh_token_encrypted);
+  const expiresAt = new Date(data.token_expires_at);
+  const accessToken = decrypt(data.access_token_encrypted);
+  let refreshToken = "";
+  try {
+    if (data.refresh_token_encrypted) {
+      refreshToken = decrypt(data.refresh_token_encrypted);
+    }
+  } catch {
+    refreshToken = "";
+  }
 
   if (expiresAt.getTime() - Date.now() < 5 * 60 * 1000) {
+    if (!refreshToken) return null;
     const refreshed = await refreshAccessToken(refreshToken);
     await storeEbayTokens(workspaceId, refreshed);
-    accessToken = refreshed.accessToken;
-    refreshToken = refreshed.refreshToken;
-    expiresAt.setTime(refreshed.expiresAt.getTime());
+    return refreshed;
   }
 
   return { accessToken, refreshToken, expiresAt };

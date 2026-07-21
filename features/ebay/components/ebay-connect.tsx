@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmationDialog } from "@/components/ui/confirmation-dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { connectEbay, disconnectEbay } from "@/features/ebay/actions";
+import { disconnectEbay } from "@/features/ebay/actions";
 
 type EbayConnectProps = {
   accounts: Array<{
@@ -17,9 +17,15 @@ type EbayConnectProps = {
     marche: string;
     est_actif: boolean;
   }>;
+  /** sandbox | production — from server env */
+  ebayEnvironment?: string;
 };
 
-export function EbayConnect({ accounts }: EbayConnectProps) {
+export function EbayConnect({
+  accounts,
+  ebayEnvironment = "sandbox",
+}: EbayConnectProps) {
+  const isSandbox = ebayEnvironment !== "production";
   const [isLoading, setIsLoading] = useState(false);
   const [disconnectAccountId, setDisconnectAccountId] = useState<string | null>(
     null,
@@ -53,6 +59,33 @@ export function EbayConnect({ accounts }: EbayConnectProps) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {isSandbox ? (
+          <div
+            className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+            role="status"
+          >
+            <p className="font-medium">Mode test eBay (Sandbox)</p>
+            <p className="mt-1 text-amber-900/90">
+              Vous devez vous connecter avec un{" "}
+              <strong>compte test Sandbox</strong>, pas votre vrai compte
+              eBay.fr. Votre mot de passe eBay réel sera refusé
+              (« This password is incorrect »).
+            </p>
+            <p className="mt-2 text-amber-900/90">
+              Créez un utilisateur test sur{" "}
+              <a
+                href="https://developer.ebay.com/my/auth?tab=sandbox"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2"
+              >
+                developer.ebay.com → Sandbox
+              </a>
+              , puis utilisez ce login/mot de passe sur la page eBay qui
+              s’ouvre.
+            </p>
+          </div>
+        ) : null}
         {accounts.length === 0 ? (
           <div className="rounded-lg border border-dashed p-5 text-center">
             <Unplug
@@ -98,16 +131,19 @@ export function EbayConnect({ accounts }: EbayConnectProps) {
           ))
         )}
 
-        <form action={connectEbay} onSubmit={() => setIsLoading(true)}>
-          <Button type="submit" disabled={isLoading} className="w-full sm:w-auto">
+        <Button asChild className="w-full sm:w-auto" disabled={isLoading}>
+          <a
+            href="/api/ebay/connect"
+            onClick={() => setIsLoading(true)}
+          >
             {isLoading ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
             ) : (
               <Plug className="mr-2 h-4 w-4" aria-hidden="true" />
             )}
             {isLoading ? "Connexion en cours…" : "Connecter un compte eBay"}
-          </Button>
-        </form>
+          </a>
+        </Button>
       </CardContent>
       <ConfirmationDialog
         open={disconnectAccountId !== null}

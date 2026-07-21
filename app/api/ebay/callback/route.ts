@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { AppError } from "@/lib/errors/app-error";
 import { encrypt } from "@/lib/crypto/encryption";
 import {
@@ -8,14 +9,19 @@ import {
   hashState,
   parseOAuthState,
 } from "@/services/ebay/oauth";
-import { isEbayMockMode } from "@/services/ebay/client";
+import { getEbayApiUrl, isEbayMockMode } from "@/services/ebay/client";
 import { ebayOAuthCallbackSchema } from "@/lib/validation/schemas";
 
 const OAUTH_STATE_COOKIE = "ebay_oauth_state";
 
+const EBAY_SCOPES = [
+  "https://api.ebay.com/oauth/api_scope",
+  "https://api.ebay.com/oauth/api_scope/sell.inventory",
+  "https://api.ebay.com/oauth/api_scope/sell.account",
+  "https://api.ebay.com/oauth/api_scope/commerce.identity.readonly",
+];
+
 function getAppUrl(request: Request): string {
-  // Toujours privilégier l'origine réelle de la requête OAuth
-  // (évite les placeholders type ton-domaine-vercel.vercel.app).
   const origin = new URL(request.url).origin;
   if (origin && !origin.includes("localhost")) {
     return origin;
@@ -42,6 +48,52 @@ function redirectToEbay(
     url.searchParams.set(key, value);
   }
   return NextResponse.redirect(url);
+}
+
+async function resolveEbayUser(
+  accessToken: string,
+  fallbackUserId: string,
+): Promise<{ ebayUserId: string; displayName: string | null }> {
+  if (isEbayMockMode()) {
+    return {
+      ebayUserId: `mock-${fallbackUserId.slice(0, 8)}`,
+      displayName: "Compte eBay (test)",
+    };
+  }
+
+  try {
+    const response = await fetch(
+      `${getEbayApiUrl()}/commerce/identity/v1/user/`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/json",
+        },
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+
+    if (response.ok) {
+      const data = (await response.json()) as {
+        userId?: string;
+        username?: string;
+      };
+      const ebayUserId = data.userId || data.username;
+      if (ebayUserId) {
+        return {
+          ebayUserId,
+          displayName: data.username ?? data.userId ?? null,
+        };
+      }
+    }
+  } catch {
+    // fallback below
+  }
+
+  return {
+    ebayUserId: `ebay-${fallbackUserId.slice(0, 8)}`,
+    displayName: null,
+  };
 }
 
 export async function GET(request: Request) {
@@ -73,68 +125,133 @@ export async function GET(request: Request) {
     const { workspaceId: userId } = parseOAuthState(state);
     cookieStore.delete(OAUTH_STATE_COOKIE);
 
+    const sessionClient = await createClient();
+    const {
+      data: { user: sessionUser },
+    } = await sessionClient.auth.getUser();
+
+    if (sessionUser && sessionUser.id !== userId) {
+      throw AppError.validation(
+        "Session utilisateur différente de la demande eBay. Reconnectez-vous puis réessayez.",
+      );
+    }
+
     const tokens = await exchangeAuthorizationCode(code);
-    const supabase = await createClient();
+    const { ebayUserId, displayName } = await resolveEbayUser(
+      tokens.accessToken,
+      userId,
+    );
 
-    const ebayUserId = isEbayMockMode()
-      ? `mock-${userId.slice(0, 8)}`
-      : userId;
+    let accessEncrypted: string;
+    let refreshEncrypted: string;
+    try {
+      accessEncrypted = encrypt(tokens.accessToken);
+      // Colonne NOT NULL côté Supabase distant.
+      refreshEncrypted = encrypt(tokens.refreshToken || "");
+    } catch (encryptError) {
+      throw AppError.internal(
+        encryptError instanceof Error
+          ? encryptError.message
+          : "ENCRYPTION_KEY manquante ou invalide",
+        encryptError,
+      );
+    }
 
-    const { data: existingAccount } = await supabase
+    const now = new Date().toISOString();
+    const admin = createAdminClient();
+
+    const { data: profile } = await admin
+      .from("profiles")
+      .select("id")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (!profile) {
+      const { error: profileError } = await admin.from("profiles").insert({
+        id: userId,
+        email: sessionUser?.email ?? null,
+      });
+      if (profileError) {
+        throw AppError.internal(
+          `Impossible de préparer le profil: ${profileError.message}`,
+          profileError,
+        );
+      }
+    }
+
+    const accountPayload = {
+      user_id: userId,
+      ebay_user_id: displayName || ebayUserId,
+      marketplace: process.env.EBAY_MARKETPLACE_ID ?? "EBAY_FR",
+      access_token_encrypted: accessEncrypted,
+      refresh_token_encrypted: refreshEncrypted,
+      token_expires_at: tokens.expiresAt.toISOString(),
+      scopes: EBAY_SCOPES,
+      is_active: true,
+      connected_at: now,
+      updated_at: now,
+    };
+
+    const { data: existing } = await admin
       .from("ebay_accounts")
       .select("id")
       .eq("user_id", userId)
-      .eq("ebay_user_id", ebayUserId)
+      .order("created_at", { ascending: true })
+      .limit(1)
       .maybeSingle();
 
-    let accountId = existingAccount?.id;
-
-    if (!accountId) {
-      const { data: newAccount, error: accountError } = await supabase
+    if (existing?.id) {
+      const { error: updateError } = await admin
         .from("ebay_accounts")
-        .insert({
-          user_id: userId,
-          ebay_user_id: ebayUserId,
-          nom_compte: isEbayMockMode() ? "Compte eBay (test)" : null,
-          marche: process.env.EBAY_MARKETPLACE_ID ?? "EBAY_FR",
-          est_actif: true,
-        })
-        .select("id")
-        .single();
+        .update(accountPayload)
+        .eq("id", existing.id)
+        .eq("user_id", userId);
 
-      if (accountError || !newAccount) {
+      if (updateError) {
         throw AppError.internal(
-          "Impossible de créer le compte eBay.",
-          accountError,
+          `Impossible de mettre à jour le compte eBay: ${updateError.message}`,
+          updateError,
         );
       }
-      accountId = newAccount.id;
     } else {
-      await supabase
+      const { error: insertError } = await admin
         .from("ebay_accounts")
-        .update({ est_actif: true, updated_at: new Date().toISOString() })
-        .eq("id", accountId);
+        .insert(accountPayload);
+
+      if (insertError) {
+        throw AppError.internal(
+          `Impossible de créer le compte eBay: ${insertError.message}`,
+          insertError,
+        );
+      }
     }
 
-    const { error: tokenError } = await supabase.from("ebay_tokens").upsert(
-      {
-        user_id: userId,
-        ebay_account_id: accountId,
-        access_token: encrypt(tokens.accessToken),
-        refresh_token: tokens.refreshToken
-          ? encrypt(tokens.refreshToken)
-          : null,
-        expires_at: tokens.expiresAt.toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "ebay_account_id" },
-    );
-
-    if (tokenError) {
-      throw AppError.internal(
-        "Impossible d'enregistrer les jetons eBay.",
-        tokenError,
+    // Sandbox : prépare politiques + lieu automatiquement (idempotent).
+    // Production : réutilise uniquement l’existant Seller Hub.
+    try {
+      const { EbayClient } = await import("@/services/ebay/client");
+      const { ensureSellerDefaults } = await import(
+        "@/services/ebay/sandbox-setup"
       );
+      const client = new EbayClient({ accessToken: tokens.accessToken });
+      const setup = await ensureSellerDefaults(client, {
+        allowCreate: process.env.EBAY_ENVIRONMENT !== "production",
+      });
+      await admin.from("user_settings").upsert(
+        {
+          user_id: userId,
+          marche_ebay: process.env.EBAY_MARKETPLACE_ID ?? "EBAY_FR",
+          politique_expedition_par_defaut: setup.fulfillmentPolicyId,
+          politique_paiement_par_defaut: setup.paymentPolicyId,
+          politique_retour_par_defaut: setup.returnPolicyId,
+          lieu_expedition_par_defaut: setup.merchantLocationKey,
+          updated_at: now,
+        },
+        { onConflict: "user_id" },
+      );
+    } catch (setupError) {
+      console.error("[ebay/callback] seller setup", setupError);
+      // La connexion reste valide même si le setup policies échoue.
     }
 
     return redirectToEbay(appUrl, { connected: "true" });
@@ -142,8 +259,13 @@ export async function GET(request: Request) {
     const message =
       error instanceof AppError
         ? error.message
-        : "Erreur lors de la connexion eBay.";
+        : error instanceof Error
+          ? error.message
+          : "Erreur lors de la connexion eBay.";
 
-    return redirectToEbay(appUrl, { error: message });
+    console.error("[ebay/callback]", message, error);
+    return redirectToEbay(appUrl, {
+      error: message.slice(0, 240),
+    });
   }
 }

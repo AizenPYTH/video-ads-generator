@@ -11,28 +11,26 @@ export async function GET() {
 
     const { data: account } = await supabase
       .from("ebay_accounts")
-      .select("id")
+      .select("access_token_encrypted, token_expires_at")
       .eq("user_id", user.id)
-      .eq("est_actif", true)
+      .eq("is_active", true)
       .limit(1)
       .maybeSingle();
 
-    if (!account) {
+    if (!account?.access_token_encrypted) {
       throw AppError.validation("Aucun compte eBay connecté.");
     }
 
-    const { data: token } = await supabase
-      .from("ebay_tokens")
-      .select("access_token, expires_at")
-      .eq("ebay_account_id", account.id)
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    if (!token || new Date(token.expires_at) < new Date()) {
-      throw AppError.validation("Session eBay expirée. Reconnectez votre compte.");
+    if (
+      account.token_expires_at &&
+      new Date(account.token_expires_at) < new Date()
+    ) {
+      throw AppError.validation(
+        "Session eBay expirée. Reconnectez votre compte.",
+      );
     }
 
-    const accessToken = decrypt(token.access_token);
+    const accessToken = decrypt(account.access_token_encrypted);
     const client = new EbayClient({ accessToken });
     const policies = await fetchEbayPolicies(client);
 

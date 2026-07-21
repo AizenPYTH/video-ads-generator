@@ -31,12 +31,15 @@ export type ChecklistItem = {
 
 export function buildAdChecklist(input: AdStatusInput): ChecklistItem[] {
   const price = Number(input.prix_vente);
+  const text = (value: unknown) =>
+    value == null ? "" : String(value).trim();
+
   return [
     {
       id: "titre",
       field: "titre",
       label: "Titre",
-      ok: Boolean(input.titre?.trim()),
+      ok: Boolean(text(input.titre)),
     },
     {
       id: "prix",
@@ -48,25 +51,25 @@ export function buildAdChecklist(input: AdStatusInput): ChecklistItem[] {
       id: "quantite",
       field: "quantite",
       label: "Quantité",
-      ok: (input.quantite ?? 0) >= 1,
+      ok: (Number(input.quantite) || 0) >= 1,
     },
     {
       id: "condition",
       field: "ebay_condition_id",
       label: "État eBay",
-      ok: Boolean(input.ebay_condition_id?.trim()),
+      ok: Boolean(text(input.ebay_condition_id)),
     },
     {
       id: "categorie",
       field: "ebay_category_id",
       label: "Catégorie eBay",
-      ok: Boolean(input.ebay_category_id?.trim()),
+      ok: Boolean(text(input.ebay_category_id)),
     },
     {
       id: "sku",
       field: "sku",
       label: "Référence / SKU",
-      ok: Boolean(input.sku?.trim()),
+      ok: Boolean(text(input.sku)),
     },
   ];
 }
@@ -85,7 +88,7 @@ export function recalculateAdStatus(input: AdStatusInput): AdStatus {
 
   if (incomplete) return "DRAFT";
 
-  if (!input.ebay_category_id?.trim()) {
+  if (!String(input.ebay_category_id ?? "").trim()) {
     if (
       input.categoryAmbiguous ||
       input.categoryStatus === "needs_review" ||
@@ -123,7 +126,13 @@ export function statusLabelFr(status: string | null | undefined): string {
     case "NEEDS_REVIEW":
       return "À vérifier";
     case "FAILED":
-      return "Erreur";
+      return "À republier";
+    case "SENDING_TO_EBAY":
+    case "INVENTORY_CREATED":
+    case "OFFER_CREATED":
+    case "VALIDATING":
+    case "PUBLISHING":
+      return "Publication en cours";
     case "PUBLISHED":
       return "Publié";
     case "DRAFT":

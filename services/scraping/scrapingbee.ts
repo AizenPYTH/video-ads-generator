@@ -18,7 +18,6 @@ export interface ScrapingBeeResponse {
 }
 
 function getApiKey(): string {
-  // Server-only. Never use NEXT_PUBLIC_SCRAPINGBEE_API_KEY.
   const key = process.env.SCRAPINGBEE_API_KEY?.trim();
   if (!key) {
     throw AppError.internal(
@@ -43,12 +42,74 @@ function isAmazonUrl(url: string): boolean {
   return /amazon\.(fr|com|de|co\.uk|it|es|ca)/i.test(url);
 }
 
+/**
+ * Amazon URLs trop longues / déjà encodées font échouer ScrapingBee (500).
+ * On garde une URL canonique courte : https://www.amazon.fr/dp/ASIN
+ */
+export function normalizeScrapingUrl(rawUrl: string): string {
+  const trimmed = rawUrl.trim();
+  try {
+    const parsed = new URL(trimmed);
+    if (!isAmazonUrl(parsed.href)) {
+      // Retirer fragments inutiles
+      parsed.hash = "";
+      return parsed.toString();
+    }
+
+    const asinMatch = parsed.pathname.match(
+      /\/(?:dp|gp\/product|product)\/([A-Z0-9]{10})(?:[/?]|$)/i,
+    );
+    if (asinMatch?.[1]) {
+      const host = parsed.hostname.replace(/^amazon\./i, "www.amazon.");
+      const normalizedHost = host.startsWith("www.")
+        ? host
+        : `www.${host.replace(/^www\./, "")}`;
+      // Forcer www.amazon.xx
+      const marketHost = parsed.hostname.includes("amazon.")
+        ? parsed.hostname.replace(/^(?:www\.)?/, "www.")
+        : normalizedHost;
+      return `https://${marketHost}/dp/${asinMatch[1].toUpperCase()}`;
+    }
+
+    parsed.hash = "";
+    // Supprimer les paramètres tracking Amazon
+    for (const key of [...parsed.searchParams.keys()]) {
+      if (
+        /^(ref|psc|smid|pd_rd|pf_rd|qid|sr|keywords|sprefix|crid|dib)/i.test(
+          key,
+        )
+      ) {
+        parsed.searchParams.delete(key);
+      }
+    }
+    return parsed.toString();
+  } catch {
+    return trimmed;
+  }
+}
+
+function countryFromUrl(url: string): string {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (host.includes("amazon.fr") || host.endsWith(".fr")) return "fr";
+    if (host.includes("amazon.de") || host.endsWith(".de")) return "de";
+    if (host.includes("amazon.co.uk")) return "gb";
+    if (host.includes("amazon.it")) return "it";
+    if (host.includes("amazon.es")) return "es";
+    if (host.includes("amazon.ca")) return "ca";
+    if (host.includes("amazon.com")) return "us";
+  } catch {
+    // ignore
+  }
+  return "fr";
+}
+
 function formatScrapingBeeError(
   status: number,
   statusText: string,
   body: string,
 ): string {
-  const snippet = body.replace(/\s+/g, " ").trim().slice(0, 200);
+  const snippet = body.replace(/\s+/g, " ").trim().slice(0, 180);
   const lower = snippet.toLowerCase();
 
   if (status === 401) {
@@ -65,18 +126,17 @@ function formatScrapingBeeError(
     lower.includes("timed out") ||
     status === 504
   ) {
-    return "Délai dépassé chez ScrapingBee. Réessayez, ou activez SCRAPINGBEE_PREMIUM=true pour Amazon.";
+    return "Délai dépassé chez ScrapingBee. Réessayez, ou activez SCRAPINGBEE_PREMIUM=true.";
   }
   if (
     lower.includes("blocked") ||
     lower.includes("captcha") ||
-    lower.includes("403") ||
     status === 403
   ) {
-    return "La page a bloqué le scraping (anti-bot). Activez SCRAPINGBEE_PREMIUM=true dans .env.local puis redémarrez.";
+    return "La page a bloqué le scraping (anti-bot). Activez SCRAPINGBEE_PREMIUM=true puis redéployez.";
   }
 
-  return `ScrapingBee a échoué (${status} ${statusText})${snippet ? ` : ${snippet}` : ""}. Pour Amazon, essayez SCRAPINGBEE_PREMIUM=true.`;
+  return `ScrapingBee a échoué (${status} ${statusText})${snippet ? ` : ${snippet}` : ""}. Vérifiez SCRAPINGBEE_PREMIUM=true sur Vercel.`;
 }
 
 type Attempt = {
@@ -84,6 +144,7 @@ type Attempt = {
   premiumProxy: boolean;
   stealthProxy: boolean;
   waitMs: number;
+  /** Toujours false en pratique — le défaut ScrapingBee casse souvent les fiches produit. */
   blockResources: boolean;
 };
 
@@ -93,26 +154,30 @@ async function scrapingBeeOnce(
   attempt: Attempt,
   countryCode: string,
   timeoutMs: number,
-): Promise<{ ok: true; html: string } | { ok: false; status: number; statusText: string; body: string }> {
-  const apiUrl = new URL("https://app.scrapingbee.com/api/v1/");
-  apiUrl.searchParams.set("api_key", apiKey);
-  apiUrl.searchParams.set("url", targetUrl);
-  apiUrl.searchParams.set("country_code", countryCode);
-  apiUrl.searchParams.set("render_js", attempt.renderJs ? "true" : "false");
+): Promise<
+  | { ok: true; html: string }
+  | { ok: false; status: number; statusText: string; body: string }
+> {
+  // Construire manuellement pour éviter un double-encodage bizarre de l'URL cible.
+  const params = new URLSearchParams();
+  params.set("api_key", apiKey);
+  params.set("url", targetUrl);
+  params.set("country_code", countryCode);
+  params.set("render_js", attempt.renderJs ? "true" : "false");
+  // Recommandation ScrapingBee sur erreurs 500
+  params.set("block_resources", attempt.blockResources ? "true" : "false");
 
   if (attempt.premiumProxy) {
-    apiUrl.searchParams.set("premium_proxy", "true");
+    params.set("premium_proxy", "true");
   }
   if (attempt.stealthProxy) {
-    apiUrl.searchParams.set("stealth_proxy", "true");
+    params.set("stealth_proxy", "true");
   }
   if (attempt.waitMs > 0 && attempt.renderJs) {
-    apiUrl.searchParams.set("wait", String(attempt.waitMs));
+    params.set("wait", String(attempt.waitMs));
   }
-  // Amazon / JS sites cassent souvent avec block_resources=true (défaut ScrapingBee)
-  if (attempt.blockResources === false) {
-    apiUrl.searchParams.set("block_resources", "false");
-  }
+
+  const apiUrl = `https://app.scrapingbee.com/api/v1/?${params.toString()}`;
 
   console.info("[scrapingbee] request", {
     host: (() => {
@@ -126,9 +191,10 @@ async function scrapingBeeOnce(
     premium: attempt.premiumProxy,
     stealth: attempt.stealthProxy,
     waitMs: attempt.waitMs,
+    blockResources: attempt.blockResources,
   });
 
-  const response = await fetch(apiUrl.toString(), {
+  const response = await fetch(apiUrl, {
     signal: AbortSignal.timeout(timeoutMs),
   });
 
@@ -154,15 +220,17 @@ export async function fetchWithScrapingBee(
   options: ScrapingBeeOptions,
 ): Promise<ScrapingBeeResponse> {
   const {
-    url,
-    timeoutMs = 45_000,
+    url: rawUrl,
+    timeoutMs = 60_000,
     renderJs = false,
     premiumProxy,
     stealthProxy = false,
-    countryCode = "fr",
+    countryCode,
     waitMs,
     blockResources,
   } = options;
+
+  const url = normalizeScrapingUrl(rawUrl);
 
   if (process.env.SCRAPINGBEE_MOCK_MODE === "true") {
     return {
@@ -174,48 +242,65 @@ export async function fetchWithScrapingBee(
 
   const apiKey = getApiKey();
   const amazon = isAmazonUrl(url);
-  // Amazon : premium par défaut (sauf SCRAPINGBEE_PREMIUM=false)
+  const resolvedCountry = countryCode ?? countryFromUrl(url);
+
   const forcePremium =
     premiumProxy === true ||
     process.env.SCRAPINGBEE_PREMIUM === "true" ||
-    (amazon &&
-      premiumProxy !== false &&
-      process.env.SCRAPINGBEE_PREMIUM !== "false");
+    (amazon && process.env.SCRAPINGBEE_PREMIUM !== "false");
 
-  const attempts: Attempt[] = [];
+  const stealthDefault =
+    stealthProxy || process.env.SCRAPINGBEE_STEALTH === "true";
 
-  // Tentative principale
-  attempts.push({
-    renderJs,
-    premiumProxy: forcePremium,
-    stealthProxy: stealthProxy || process.env.SCRAPINGBEE_STEALTH === "true",
-    waitMs: waitMs ?? (amazon && renderJs ? 3000 : 0),
-    blockResources: blockResources ?? (amazon ? false : true),
-  });
+  // Toujours désactiver block_resources sauf demande explicite true
+  const defaultBlock = blockResources === true;
 
-  // Fallback Amazon : premium si pas déjà, puis stealth
-  if (amazon && renderJs) {
+  const attempts: Attempt[] = [
+    {
+      renderJs,
+      premiumProxy: forcePremium,
+      stealthProxy: stealthDefault,
+      waitMs: waitMs ?? (amazon && renderJs ? 3500 : 0),
+      blockResources: defaultBlock,
+    },
+  ];
+
+  // Fallbacks si 500 / anti-bot (tous sites, pas seulement Amazon)
+  if (renderJs) {
     if (!forcePremium) {
       attempts.push({
         renderJs: true,
         premiumProxy: true,
         stealthProxy: false,
-        waitMs: 4000,
+        waitMs: amazon ? 4000 : 2000,
         blockResources: false,
       });
     }
-    if (process.env.SCRAPINGBEE_STEALTH === "true" || !forcePremium) {
-      attempts.push({
-        renderJs: true,
-        premiumProxy: false,
-        stealthProxy: true,
-        waitMs: 5000,
-        blockResources: false,
-      });
-    }
+    attempts.push({
+      renderJs: true,
+      premiumProxy: true,
+      stealthProxy: true,
+      waitMs: amazon ? 5000 : 2500,
+      blockResources: false,
+    });
+    // Dernier recours : sans JS (HTML brut)
+    attempts.push({
+      renderJs: false,
+      premiumProxy: true,
+      stealthProxy: false,
+      waitMs: 0,
+      blockResources: false,
+    });
+  } else if (amazon || forcePremium) {
+    attempts.push({
+      renderJs: false,
+      premiumProxy: true,
+      stealthProxy: false,
+      waitMs: 0,
+      blockResources: false,
+    });
   }
 
-  // Dédupliquer les tentatives identiques
   const seen = new Set<string>();
   const uniqueAttempts = attempts.filter((a) => {
     const key = `${a.renderJs}:${a.premiumProxy}:${a.stealthProxy}:${a.waitMs}:${a.blockResources}`;
@@ -233,7 +318,7 @@ export async function fetchWithScrapingBee(
         apiKey,
         url,
         attempt,
-        countryCode,
+        resolvedCountry,
         timeoutMs,
       );
       if (result.ok) {
@@ -252,7 +337,6 @@ export async function fetchWithScrapingBee(
         };
       }
       lastFail = result;
-      // Ne pas retry sur erreurs de compte
       if (result.status === 401 || result.status === 402) break;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

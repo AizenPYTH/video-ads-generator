@@ -13,7 +13,16 @@ export interface EbayPolicies {
   returns: EbayPolicy[];
 }
 
-export async function fetchEbayPolicies(client: EbayClient): Promise<EbayPolicies> {
+export interface ResolvedListingPolicies {
+  fulfillmentPolicyId: string;
+  paymentPolicyId: string;
+  returnPolicyId: string;
+  merchantLocationKey: string;
+}
+
+export async function fetchEbayPolicies(
+  client: EbayClient,
+): Promise<EbayPolicies> {
   if (isEbayMockMode()) {
     return {
       fulfillment: mockPolicies.fulfillmentPolicies.map((p) => ({
@@ -37,15 +46,27 @@ export async function fetchEbayPolicies(client: EbayClient): Promise<EbayPolicie
   const marketplaceId = client.marketplace;
 
   const [fulfillment, payment, returns] = await Promise.all([
-    client.get<{ fulfillmentPolicies?: Array<{ fulfillmentPolicyId: string; name: string; marketplaceId: string }> }>(
-      `/sell/account/v1/fulfillment_policy?marketplace_id=${marketplaceId}`,
-    ),
-    client.get<{ paymentPolicies?: Array<{ paymentPolicyId: string; name: string; marketplaceId: string }> }>(
-      `/sell/account/v1/payment_policy?marketplace_id=${marketplaceId}`,
-    ),
-    client.get<{ returnPolicies?: Array<{ returnPolicyId: string; name: string; marketplaceId: string }> }>(
-      `/sell/account/v1/return_policy?marketplace_id=${marketplaceId}`,
-    ),
+    client.get<{
+      fulfillmentPolicies?: Array<{
+        fulfillmentPolicyId: string;
+        name: string;
+        marketplaceId: string;
+      }>;
+    }>(`/sell/account/v1/fulfillment_policy?marketplace_id=${marketplaceId}`),
+    client.get<{
+      paymentPolicies?: Array<{
+        paymentPolicyId: string;
+        name: string;
+        marketplaceId: string;
+      }>;
+    }>(`/sell/account/v1/payment_policy?marketplace_id=${marketplaceId}`),
+    client.get<{
+      returnPolicies?: Array<{
+        returnPolicyId: string;
+        name: string;
+        marketplaceId: string;
+      }>;
+    }>(`/sell/account/v1/return_policy?marketplace_id=${marketplaceId}`),
   ]);
 
   return {

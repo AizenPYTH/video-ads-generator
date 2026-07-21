@@ -58,6 +58,11 @@ type CategoryResolution = {
   }>;
 };
 
+function asText(value: unknown): string {
+  if (value == null) return "";
+  return String(value);
+}
+
 type Props = {
   adId: string;
   initial: {
@@ -88,13 +93,18 @@ export function AdDetailEditor({
   const [pending, startTransition] = useTransition();
   const priceRef = useRef<HTMLInputElement>(null);
 
-  const [titre, setTitre] = useState(initial.titre);
-  const [prix, setPrix] = useState(initial.prix_vente);
+  const [titre, setTitre] = useState(() => asText(initial.titre));
+  const [prix, setPrix] = useState(() => asText(initial.prix_vente));
   const [images, setImages] = useState<EditorAdImage[]>(() =>
     [...initialImages].sort((a, b) => a.ordre - b.ordre),
   );
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [marketingPreview, setMarketingPreview] = useState<string | null>(null);
+
+  useEffect(() => {
+    setTitre(asText(initial.titre));
+    setPrix(asText(initial.prix_vente));
+  }, [initial.titre, initial.prix_vente]);
 
   useEffect(() => {
     setImages([...initialImages].sort((a, b) => a.ordre - b.ordre));
@@ -109,49 +119,73 @@ export function AdDetailEditor({
   }, [priceMissing]);
 
   const publishValidation = useMemo((): AdValidationResult => {
-    const errors = [...validation.errors];
-    if (!titre.trim() && !errors.some((e) => e.field === "titre")) {
+    const errors = [...(validation.errors ?? [])].filter(
+      (err) => err.field !== "titre" && err.field !== "prix_vente",
+    );
+    const titleText = asText(titre).trim();
+    const priceText = asText(prix).trim();
+
+    if (!titleText) {
       errors.push({ field: "titre", message: "Le titre est obligatoire." });
+    } else if (titleText.length > 80) {
+      errors.push({
+        field: "titre",
+        message: "Le titre ne doit pas dépasser 80 caractères.",
+      });
     }
-    if (
-      (!prix || Number(prix) <= 0) &&
-      !errors.some((e) => e.field === "prix_vente")
-    ) {
+
+    if (!priceText || Number(priceText) <= 0) {
       errors.push({
         field: "prix_vente",
         message: "Le prix de vente est obligatoire.",
       });
     }
+
+    // Les images sont déjà persistées à l’ajout — pas besoin d’« Enregistrer »
+    // pour publier. On exige au moins une image HTTPS pour eBay.
+    if (!images.some((img) => /^https:\/\//i.test(img.url))) {
+      errors.push({
+        field: "images",
+        message: "Ajoutez au moins une image avant de publier.",
+      });
+    }
+
     return {
-      ...validation,
       valid: errors.length === 0,
       errors,
+      warnings: validation.warnings ?? [],
     };
-  }, [validation, titre, prix]);
+  }, [validation, titre, prix, images]);
 
   function runAction(action: string, task: () => Promise<void>) {
     setPendingAction(action);
-    startTransition(async () => {
-      try {
-        await task();
-      } finally {
-        setPendingAction(null);
-      }
+    startTransition(() => {
+      void (async () => {
+        try {
+          await task();
+        } catch (err) {
+          toast.error(
+            err instanceof Error ? err.message : "Une erreur est survenue.",
+          );
+        } finally {
+          setPendingAction(null);
+        }
+      })();
     });
   }
 
   function save() {
     runAction("save", async () => {
       const result = await updateAd(adId, {
-        titre: titre.trim() || null,
-        prix_vente: prix.trim() || null,
-        description: initial.description || null,
-        quantite: Math.max(1, initial.quantite || 1),
-        ebay_condition_id: initial.ebay_condition_id || null,
-        sku: initial.sku || null,
-        ebay_category_id: initial.ebay_category_id || null,
+        titre: asText(titre).trim() || null,
+        prix_vente: asText(prix).trim() || null,
+        description: asText(initial.description).trim() || null,
+        quantite: Math.max(1, Number(initial.quantite) || 1),
+        ebay_condition_id: asText(initial.ebay_condition_id).trim() || null,
+        sku: asText(initial.sku).trim() || null,
+        ebay_category_id: asText(initial.ebay_category_id).trim() || null,
       });
-      if (result.error) {
+      if (result?.error) {
         toast.error(result.error);
         return;
       }
@@ -165,7 +199,7 @@ export function AdDetailEditor({
       toast.error("Ajoutez une image principale d’abord.");
       return;
     }
-    if (!titre.trim()) {
+    if (!asText(titre).trim()) {
       toast.error("Indiquez un titre avant de générer l’image.");
       return;
     }
@@ -174,8 +208,8 @@ export function AdDetailEditor({
         adId,
         productImageUrl: primary.url,
         storagePath: primary.storage_path,
-        title: titre,
-        price: prix || undefined,
+        title: asText(titre).trim(),
+        price: asText(prix).trim() || undefined,
       });
       if (result.error || !result.data) {
         toast.error(result.error ?? `Échec de la génération ${APP_NAME}.`);
@@ -191,7 +225,7 @@ export function AdDetailEditor({
       const result = await commitMarketingImage({
         adId,
         previewDataUrl: marketingPreview,
-        title: titre,
+        title: asText(titre).trim(),
       });
       if (result.error || !result.data) {
         toast.error(result.error ?? "Impossible d’enregistrer l’image.");
@@ -225,14 +259,13 @@ export function AdDetailEditor({
         <Badge variant="secondary">{statusLabelFr(initial.statut)}</Badge>
       </div>
 
-      {/* Aperçu produit */}
       <Card className="shadow-xs overflow-hidden">
         <div className="bg-muted">
           {primary ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={primary.url}
-              alt={titre || "Produit"}
+              alt={asText(titre) || "Produit"}
               className="mx-auto max-h-[380px] w-full object-contain"
             />
           ) : (
@@ -277,7 +310,6 @@ export function AdDetailEditor({
         </CardContent>
       </Card>
 
-      {/* Images */}
       <Card className="shadow-xs">
         <CardContent className="pt-6">
           <AdImagesPanel
@@ -289,7 +321,6 @@ export function AdDetailEditor({
         </CardContent>
       </Card>
 
-      {/* Actions */}
       <Card className="shadow-xs">
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Actions</CardTitle>
@@ -298,7 +329,7 @@ export function AdDetailEditor({
           <Button
             type="button"
             variant="outline"
-            disabled={pending || !primary || !titre.trim()}
+            disabled={pending || !primary || !asText(titre).trim()}
             onClick={generateMarketing}
             aria-busy={pendingAction === "marketing-image"}
           >
@@ -319,7 +350,7 @@ export function AdDetailEditor({
           </Button>
           <PublishDialog
             adId={adId}
-            adTitle={titre}
+            adTitle={asText(titre)}
             validation={publishValidation}
           />
         </CardContent>

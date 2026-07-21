@@ -27,10 +27,15 @@ async function EbayContent() {
     .eq("user_id", user.id)
     .maybeSingle();
 
+  const ebayEnvironment = process.env.EBAY_ENVIRONMENT ?? "sandbox";
+
   return (
     <div className="grid gap-6 lg:grid-cols-2">
-      <EbayConnect accounts={accounts} />
-      <EbaySettings settings={settings} />
+      <EbayConnect accounts={accounts} ebayEnvironment={ebayEnvironment} />
+      <EbaySettings
+        settings={settings}
+        hasConnectedAccount={accounts.length > 0}
+      />
     </div>
   );
 }

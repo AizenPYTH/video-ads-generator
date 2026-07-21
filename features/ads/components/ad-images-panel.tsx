@@ -155,16 +155,28 @@ export function AdImagesPanel({
           toast.error(result.error ?? "Impossible d'ajouter les images.");
           return;
         }
-        onImagesChange([
-          ...images,
-          ...result.data.map((row) => ({
-            id: row.id,
-            url: row.url,
-            ordre: row.ordre,
-            est_principale: row.est_principale,
-            storage_path: row.storage_path,
-          })),
-        ]);
+        onImagesChange((prev) => {
+          // Prefer functional update — `images` in the closure can be stale
+          // after a concurrent refresh from revalidatePath.
+          const existingIds = new Set(prev.map((i) => i.id));
+          const added = result.data!
+            .filter((row) => row?.id && !existingIds.has(row.id))
+            .map((row) => ({
+              id: row.id,
+              url: row.url,
+              ordre: row.ordre,
+              est_principale: Boolean(row.est_principale),
+              storage_path: row.storage_path ?? null,
+            }));
+          const merged = [...prev, ...added].map((img, ordre) => ({
+            ...img,
+            ordre,
+          }));
+          if (!merged.some((i) => i.est_principale) && merged[0]) {
+            merged[0] = { ...merged[0], est_principale: true };
+          }
+          return merged;
+        });
         setNewFiles([]);
         toast.success("Images ajoutées");
       } catch (err) {
@@ -176,15 +188,15 @@ export function AdImagesPanel({
   }
 
   useEffect(() => {
-    // sync primary if none
-    if (images.length && !images.some((i) => i.est_principale)) {
-      onImagesChange(
-        images.map((img, ordre) => ({
-          ...img,
-          est_principale: ordre === 0,
-        })),
-      );
-    }
+    if (images.length === 0) return;
+    if (images.some((i) => i.est_principale)) return;
+    onImagesChange(
+      images.map((img, ordre) => ({
+        ...img,
+        est_principale: ordre === 0,
+      })),
+    );
+    // Intentionally only when the list size changes (new upload / delete).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [images.length]);
 
