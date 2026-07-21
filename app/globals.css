@@ -27,6 +27,12 @@
   --navy-700: #1c466e;
   --glacier-300: #72c5e8;
   --glacier-100: #e1f3fb;
+
+  --ss-surface: #ffffff;
+  --ss-border: var(--border);
+  --ss-shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.06);
+  --ss-electric: #1a7ab8;
+  --ss-cyan: #3db8e0;
 }
 
 .dark {

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { ProfileForm } from "@/features/settings/components/profile-form";
@@ -119,6 +120,16 @@ export default function ParametresPage() {
         title="Paramètres"
         description="Gérez votre profil, vos préférences et vos notifications."
       />
+
+      <p className="text-sm text-muted-foreground">
+        Données de test sandbox ?{" "}
+        <Link
+          href="/dashboard/parametres/nettoyage"
+          className="underline underline-offset-2 hover:text-foreground"
+        >
+          Aperçu dry-run et nettoyage manuel
+        </Link>
+      </p>
 
       <Suspense
         fallback={

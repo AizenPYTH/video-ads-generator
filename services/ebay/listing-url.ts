@@ -1,5 +1,10 @@
 /**
  * URLs publiques / vendeur pour une annonce eBay (sandbox vs production).
+ *
+ * Sandbox FR : les annonces se voient sur https://www.sandbox.ebay.fr
+ * (Seller Hub `/sh/lst/active`, fiche `/itm/{id}`).
+ * L’OAuth peut s’ouvrir sur auth.sandbox.ebay.com — c’est normal ;
+ * ne pas confondre avec sandbox.ebay.com ni le vrai ebay.fr.
  */
 
 export function isEbaySandboxEnvironment(): boolean {

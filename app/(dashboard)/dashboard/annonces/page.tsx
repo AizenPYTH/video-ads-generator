@@ -1,18 +1,23 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { format } from "date-fns";
-import { fr } from "date-fns/locale";
 import { PlusCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { fetchAds } from "@/features/ads/queries";
 import { AdFilters } from "@/features/ads/components/ad-filters";
-import { AdCard } from "@/components/ads/ad-card";
 import { EmptyState } from "@/components/ads/empty-state";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { toBadgeStatus } from "@/lib/ads/status-map";
-import { getStatusLabel, type AdStatusGroup } from "@/features/ads/status";
+import { type AdStatusGroup } from "@/features/ads/status";
+import {
+  AdsBulkBoard,
+  type BulkAdRow,
+} from "@/features/ads/components/bulk/ads-bulk-board";
+import {
+  buildEbayListingUrl,
+  isEbaySandboxEnvironment,
+} from "@/services/ebay/listing-url";
+import type { AdStatus } from "@/types/ads";
 
 export const metadata = {
   title: "Mes annonces — Smart Seller",
@@ -23,6 +28,7 @@ type PageProps = {
     search?: string;
     group?: string;
     page?: string;
+    sort?: string;
   }>;
 };
 
@@ -40,12 +46,19 @@ async function AdsList({
 
   const page = Number(searchParams.page) || 1;
   const group = searchParams.group as AdStatusGroup | undefined;
+  const sortBy =
+    searchParams.sort === "titre"
+      ? "titre"
+      : searchParams.sort === "created_at"
+        ? "created_at"
+        : "updated_at";
 
-  const { ads, totalPages } = await fetchAds(user.id, {
+  const { ads, totalPages, total } = await fetchAds(user.id, {
     search: searchParams.search,
     group,
     page,
-    limit: 12,
+    limit: 50,
+    sortBy,
   });
 
   if (ads.length === 0) {
@@ -75,72 +88,95 @@ async function AdsList({
     .order("ordre", { ascending: true });
 
   const imageByAd = new Map<string, string>();
+  const hasImage = new Set<string>();
   for (const image of imageRows ?? []) {
+    hasImage.add(image.ad_id);
     if (image.est_principale || !imageByAd.has(image.ad_id)) {
       imageByAd.set(image.ad_id, image.url);
     }
   }
 
+  const rows: BulkAdRow[] = ads.map((ad) => {
+    const meta =
+      ad.metadata && typeof ad.metadata === "object"
+        ? (ad.metadata as Record<string, unknown>)
+        : {};
+    const categoryName =
+      (typeof meta.category_name === "string" && meta.category_name) ||
+      (meta.category_resolution &&
+      typeof meta.category_resolution === "object" &&
+      typeof (meta.category_resolution as { categoryName?: string }).categoryName ===
+        "string"
+        ? (meta.category_resolution as { categoryName: string }).categoryName
+        : null);
+    const listingId =
+      typeof meta.ebay_listing_id === "string" ? meta.ebay_listing_id : null;
+    const listingUrl =
+      (typeof meta.ebay_listing_url === "string" && meta.ebay_listing_url) ||
+      buildEbayListingUrl(listingId);
+    const mpn =
+      typeof meta.mpn === "string"
+        ? meta.mpn
+        : meta.item_specifics &&
+            typeof meta.item_specifics === "object" &&
+            typeof (meta.item_specifics as { MPN?: string }).MPN === "string"
+          ? (meta.item_specifics as { MPN: string }).MPN
+          : null;
+    const metaImages = Array.isArray(meta.images)
+      ? (meta.images as string[])
+      : [];
+
+    return {
+      id: ad.id,
+      titre: ad.titre,
+      sku: ad.sku,
+      prix_vente: ad.prix_vente != null ? String(ad.prix_vente) : null,
+      quantite: ad.quantite ?? 1,
+      statut: ad.statut as AdStatus,
+      categoryName,
+      imageUrl: imageByAd.get(ad.id) ?? metaImages[0] ?? null,
+      hasImage: hasImage.has(ad.id) || metaImages.length > 0,
+      mpn,
+      listingUrl,
+    };
+  });
+
   return (
-    <>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {ads.map((ad) => {
-          const metadata =
-            ad.metadata && typeof ad.metadata === "object"
-              ? (ad.metadata as { images?: string[] })
-              : null;
-          return (
-            <AdCard
-              key={ad.id}
-              id={ad.id}
-              title={ad.titre ?? "Sans titre"}
-              price={ad.prix_vente ? `${ad.prix_vente} €` : undefined}
-              imageUrl={imageByAd.get(ad.id) ?? metadata?.images?.[0]}
-              status={toBadgeStatus(ad.statut)}
-              statusLabel={getStatusLabel(ad.statut)}
-              updatedAt={format(new Date(ad.updated_at), "d MMM yyyy", {
-                locale: fr,
-              })}
-              href={`/dashboard/annonces/${ad.id}`}
-            />
-          );
-        })}
-      </div>
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        {total} annonce{total > 1 ? "s" : ""} · page {page}/{totalPages || 1}
+      </p>
+      <AdsBulkBoard ads={rows} isSandbox={isEbaySandboxEnvironment()} />
 
       {totalPages > 1 && (
-        <div className="mt-8 flex justify-center gap-2">
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-            <Button
-              key={p}
-              variant={p === page ? "default" : "outline"}
-              size="sm"
-              asChild
-            >
-              <Link
-                href={`/dashboard/annonces?page=${p}${searchParams.search ? `&search=${searchParams.search}` : ""}${searchParams.group ? `&group=${searchParams.group}` : ""}`}
+        <div className="flex flex-wrap justify-center gap-2 pt-2">
+          {Array.from({ length: Math.min(totalPages, 20) }, (_, i) => i + 1).map(
+            (p) => (
+              <Button
+                key={p}
+                variant={p === page ? "default" : "outline"}
+                size="sm"
+                asChild
               >
-                {p}
-              </Link>
-            </Button>
-          ))}
+                <Link
+                  href={`/dashboard/annonces?page=${p}${searchParams.search ? `&search=${encodeURIComponent(searchParams.search)}` : ""}${searchParams.group ? `&group=${encodeURIComponent(searchParams.group)}` : ""}${searchParams.sort ? `&sort=${encodeURIComponent(searchParams.sort)}` : ""}`}
+                >
+                  {p}
+                </Link>
+              </Button>
+            ),
+          )}
         </div>
       )}
-    </>
+    </div>
   );
 }
 
 function AdsSkeleton() {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+    <div className="space-y-3">
       {Array.from({ length: 8 }).map((_, i) => (
-        <div key={i} className="overflow-hidden rounded-xl border">
-          <Skeleton className="aspect-[4/3] rounded-none" />
-          <div className="space-y-3 p-4">
-            <Skeleton className="h-4 w-4/5" />
-            <Skeleton className="h-6 w-1/3" />
-            <Skeleton className="h-4 w-1/2" />
-          </div>
-        </div>
+        <Skeleton key={i} className="h-16 w-full rounded-xl" />
       ))}
     </div>
   );
@@ -153,7 +189,7 @@ export default async function AnnoncesPage({ searchParams }: PageProps) {
     <div className="space-y-6">
       <PageHeader
         title="Mes annonces"
-        description="Retrouvez, complétez et publiez vos annonces."
+        description="Gérez, enrichissez et publiez vos annonces en masse."
       >
         <Button asChild>
           <Link href="/dashboard/creer">

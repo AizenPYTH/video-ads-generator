@@ -84,16 +84,18 @@ export function EbayConnect({
               .
             </p>
             <p className="mt-2 text-amber-900/90">
-              Les annonces publiées apparaissent sur{" "}
+              L’écran de connexion OAuth peut s’ouvrir sur{" "}
+              <strong>auth.sandbox.ebay.com</strong> (normal). Ensuite, pour{" "}
+              <em>voir</em> vos annonces FR, utilisez uniquement{" "}
               <a
                 href="https://www.sandbox.ebay.fr/sh/lst/active"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="underline underline-offset-2"
               >
-                sandbox.ebay.fr → Mes annonces
-              </a>
-              , <strong>pas</strong> sur le vrai site ebay.fr.
+                www.sandbox.ebay.fr → Mes annonces
+              </a>{" "}
+              avec le même compte test — pas sandbox.ebay.com ni ebay.fr.
             </p>
           </div>
         ) : null}
