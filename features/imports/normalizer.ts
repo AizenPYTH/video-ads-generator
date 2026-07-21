@@ -120,15 +120,22 @@ export function normalizeImportRow(row: CsvRow): NormalizedImportRow {
 
   const item_specifics = mergeItemSpecifics(fromPipe, {
     Brand: brand,
+    Marque: brand,
     MPN: mpn,
     Model: model,
+    Modèle: model,
     Type: type ?? productType,
     Color: color,
+    Couleur: color,
     Material: material,
     "Compatible Brand": pick(row, "compatible_brand") || null,
+    "Marque compatible": pick(row, "compatible_brand") || null,
     "Compatible Device": pick(row, "compatible_device") || null,
+    "Appareil compatible": pick(row, "compatible_device") || null,
     "Compatible Model Number": pick(row, "compatible_model") || null,
+    "Numéro de modèle compatible": pick(row, "compatible_model") || null,
     Manufacturer: pick(row, "manufacturer") || null,
+    Fabricant: pick(row, "manufacturer") || null,
   });
 
   const titre = pick(row, "titre", "title");

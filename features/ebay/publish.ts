@@ -12,6 +12,12 @@ import {
 } from "@/services/ebay/inventory";
 import { resolveListingPolicies } from "@/services/ebay/sandbox-setup";
 import { toEbayInventoryCondition } from "@/services/ebay/condition";
+import {
+  buildEbayAspects,
+  collectRawAspectValues,
+  extractAspectSourcesFromAd,
+} from "@/services/ebay/aspects";
+import { getItemAspectsForCategory } from "@/services/ebay/taxonomy";
 import { validateAdForPublish } from "@/features/ads/validation";
 import { fetchAdById } from "@/features/ads/queries";
 import type { IdentificationResult } from "@/types/identification";
@@ -156,7 +162,6 @@ export async function publishAd(
 
     const settings = await getUserSettings(userId);
     const images = await getAdImages(userId, adId);
-    const identification = ad.resultat_identification as IdentificationResult | null;
 
     // Filtrer les images non https (eBay refuse http / data / relatives)
     const httpsImages = images.filter((u) => /^https:\/\//i.test(u)).slice(0, 12);
@@ -167,19 +172,51 @@ export async function publishAd(
       };
     }
 
+    const client = new EbayClient({ accessToken });
+
+    // Aspects depuis CSV metadata / URL / photo — mappés aux noms FR Taxonomy
+    const rawAspects = collectRawAspectValues(
+      extractAspectSourcesFromAd({
+        titre: ad.titre,
+        resultat_identification: ad.resultat_identification,
+        metadata: ad.metadata,
+      }),
+    );
+
+    let categoryAspects: Awaited<
+      ReturnType<typeof getItemAspectsForCategory>
+    > = [];
+    try {
+      if (ad.ebay_category_id) {
+        categoryAspects = await getItemAspectsForCategory(ad.ebay_category_id);
+      }
+    } catch (err) {
+      console.warn("[publish] taxonomy aspects unavailable", err);
+    }
+
+    const { aspects, missingRequired, mappedFrom } = buildEbayAspects({
+      raw: rawAspects,
+      categoryAspects,
+    });
+
+    console.info("[publish] aspects", {
+      adId,
+      rawKeys: Object.keys(rawAspects),
+      mapped: mappedFrom,
+      aspectKeys: Object.keys(aspects),
+      missingRequired,
+    });
+
+    if (missingRequired.length > 0) {
+      return {
+        error: `Caractéristiques eBay manquantes : ${missingRequired.join(", ")}. Vérifiez le CSV (Compatible brand, Brand, Type…) puis réessayez.`,
+      };
+    }
+
     await supabase
       .from("ads")
       .update({ statut: "SENDING_TO_EBAY" })
       .eq("id", adId);
-
-    const client = new EbayClient({ accessToken });
-
-    const aspects: Record<string, string[]> = {};
-    if (identification?.itemSpecifics) {
-      for (const [key, value] of Object.entries(identification.itemSpecifics)) {
-        aspects[key] = Array.isArray(value) ? value : [value];
-      }
-    }
 
     const condition = toEbayInventoryCondition(ad.ebay_condition_id);
     const policies = await resolveListingPolicies(client, {

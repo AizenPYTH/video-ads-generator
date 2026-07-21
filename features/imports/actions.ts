@@ -467,10 +467,39 @@ async function createDraftAdFromImport(
         },
         item_specifics: {
           ...data.item_specifics,
-          ...(resolution.categoryId
-            ? {}
+          ...(data.compatible_brand
+            ? {
+                "Compatible Brand": data.compatible_brand,
+                "Marque compatible": data.compatible_brand,
+              }
+            : {}),
+          ...(data.compatible_device
+            ? {
+                "Compatible Device": data.compatible_device,
+                "Appareil compatible": data.compatible_device,
+              }
+            : {}),
+          ...(data.compatible_model
+            ? {
+                "Compatible Model Number": data.compatible_model,
+                "Numéro de modèle compatible": data.compatible_model,
+              }
+            : {}),
+          ...(data.brand
+            ? { Brand: data.brand, Marque: data.brand }
             : {}),
         },
+        brand: data.brand,
+        manufacturer: data.manufacturer,
+        mpn: data.mpn,
+        model: data.model,
+        product_type: data.product_type,
+        type: data.type,
+        color: data.color,
+        material: data.material,
+        compatible_brand: data.compatible_brand,
+        compatible_device: data.compatible_device,
+        compatible_model: data.compatible_model,
         category_resolution: resolution,
         category_name: resolution.categoryName ?? data.category_name,
         root_category_name: resolution.rootCategoryName,
