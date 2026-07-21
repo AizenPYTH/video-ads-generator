@@ -58,7 +58,6 @@ function offerBody(input: CreateOfferInput) {
     marketplaceId: input.marketplaceId ?? "EBAY_FR",
     format: "FIXED_PRICE" as const,
     availableQuantity: input.quantity ?? 1,
-    listingDuration: "GTC" as const,
     pricingSummary: {
       price: {
         value: Number(input.price).toFixed(2),
@@ -238,7 +237,21 @@ export async function recreateOffer(
 ): Promise<{ offerId: string }> {
   const marketplace = input.marketplaceId ?? client.marketplace;
   await purgeOffersForSku(client, input.sku, marketplace);
-  return createOffer(client, { ...input, marketplaceId: marketplace });
+  try {
+    return await createOffer(client, { ...input, marketplaceId: marketplace });
+  } catch (err) {
+    if (!isEbayAlreadyExistsError(err)) throw err;
+    await purgeOffersForSku(client, input.sku, marketplace);
+    const again = await getOffersBySku(client, input.sku, marketplace);
+    if (again[0]?.offerId) {
+      await updateOffer(client, again[0].offerId, {
+        ...input,
+        marketplaceId: marketplace,
+      });
+      return { offerId: again[0].offerId };
+    }
+    return createOffer(client, { ...input, marketplaceId: marketplace });
+  }
 }
 
 export async function createInventoryItem(

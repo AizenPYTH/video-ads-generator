@@ -157,35 +157,64 @@ export async function storeEbayTokens(
 ): Promise<void> {
   const supabase = createAdminClient();
 
-  const { error } = await supabase
+  const payload = {
+    access_token_encrypted: encrypt(tokens.accessToken),
+    refresh_token_encrypted: encrypt(tokens.refreshToken || ""),
+    token_expires_at: tokens.expiresAt.toISOString(),
+    updated_at: new Date().toISOString(),
+    is_active: true,
+  };
+
+  // Ne pas filtrer is_active=true : sinon le refresh échoue silencieusement
+  // si la ligne a été désactivée / schéma hybride.
+  const { error, count } = await supabase
     .from("ebay_accounts")
-    .update({
-      access_token_encrypted: encrypt(tokens.accessToken),
-      refresh_token_encrypted: encrypt(tokens.refreshToken || ""),
-      token_expires_at: tokens.expiresAt.toISOString(),
-      updated_at: new Date().toISOString(),
-      is_active: true,
-    })
-    .eq("user_id", workspaceId)
-    .eq("is_active", true);
+    .update(payload, { count: "exact" })
+    .eq("user_id", workspaceId);
 
   if (error) {
     throw AppError.internal("Failed to store eBay tokens", error);
+  }
+  if (count === 0) {
+    // Fallback : tenter avec is_active si aucune ligne touchée
+    const { error: err2 } = await supabase
+      .from("ebay_accounts")
+      .update(payload)
+      .eq("user_id", workspaceId)
+      .eq("is_active", true);
+    if (err2) {
+      throw AppError.internal("Failed to store eBay tokens", err2);
+    }
   }
 }
 
 export async function getEbayTokens(workspaceId: string): Promise<EbayTokens | null> {
   const supabase = createAdminClient();
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("ebay_accounts")
     .select(
-      "access_token_encrypted, refresh_token_encrypted, token_expires_at",
+      "access_token_encrypted, refresh_token_encrypted, token_expires_at, is_active",
     )
     .eq("user_id", workspaceId)
     .eq("is_active", true)
     .limit(1)
     .maybeSingle();
+
+  // Fallback sans filtre is_active (schémas / comptes désynchronisés)
+  if (error || !data?.access_token_encrypted) {
+    const fallback = await supabase
+      .from("ebay_accounts")
+      .select(
+        "access_token_encrypted, refresh_token_encrypted, token_expires_at, is_active",
+      )
+      .eq("user_id", workspaceId)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    data = fallback.data;
+    error = fallback.error;
+  }
 
   if (error || !data?.access_token_encrypted) {
     return null;

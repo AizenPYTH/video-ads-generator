@@ -10,7 +10,6 @@ import {
   getInventoryItem,
   publishOffer,
   recreateOffer,
-  isEbayOfferUnavailableError,
 } from "@/services/ebay/inventory";
 import { resolveListingPolicies } from "@/services/ebay/sandbox-setup";
 import { toEbayInventoryCondition } from "@/services/ebay/condition";
@@ -249,8 +248,14 @@ export async function publishAd(
       { onConflict: "user_id" },
     );
 
+    // Sandbox : SKU unique + offre neuve (évite l’état corrompu des retries)
+    const sandboxPublish = isEbaySandboxEnvironment();
+    let workingSku = sandboxPublish
+      ? `${ad.sku}-p${Date.now().toString(36).slice(-6)}`
+      : ad.sku!;
+
     await createInventoryItem(client, {
-      sku: ad.sku!,
+      sku: workingSku,
       title: ad.titre!,
       description: ad.description!,
       condition,
@@ -259,18 +264,17 @@ export async function publishAd(
       quantity: ad.quantite,
     });
 
-    const inventoryOk = await getInventoryItem(client, ad.sku!);
+    const inventoryOk = await getInventoryItem(client, workingSku);
     if (!inventoryOk) {
       throw new AppError(
         "EBAY_ERROR",
-        "L’article d’inventaire eBay n’a pas été créé (SKU introuvable après écriture). Réessayez.",
+        "L’article d’inventaire eBay n’a pas été créé (SKU introuvable après écriture). Réessayez. [ss5]",
         { status: 502 },
       );
     }
 
     await supabase.from("ads").update({ statut: "INVENTORY_CREATED" }).eq("id", adId);
 
-    let workingSku = ad.sku!;
     const buildOfferInput = (sku: string, policySet: typeof policies) => ({
       sku,
       price: parseFloat(String(ad.prix_vente)),
@@ -280,15 +284,31 @@ export async function publishAd(
       paymentPolicyId: policySet.paymentPolicyId,
       returnPolicyId: policySet.returnPolicyId,
       merchantLocationKey: policySet.merchantLocationKey,
-      quantity: ad.quantite,
+      quantity: Math.max(1, Number(ad.quantite) || 1),
       marketplaceId: client.marketplace,
       listingDescription: String(ad.description ?? "").slice(0, 4000),
     });
 
-    let offerInput = buildOfferInput(workingSku, policies);
+    const offerInput = buildOfferInput(workingSku, policies);
 
-    // Réutilise l’offre eBay si un essai précédent l’a déjà créée (idempotent)
-    let ensured = await ensureOffer(client, offerInput);
+    // Sandbox : purge + create. Prod : réutilise si possible.
+    let ensured = sandboxPublish
+      ? {
+          ...(await recreateOffer(client, offerInput)),
+          alreadyPublished: false as boolean,
+          listingId: undefined as string | undefined,
+        }
+      : await ensureOffer(client, offerInput);
+
+    if (workingSku !== ad.sku) {
+      await supabase
+        .from("ads")
+        .update({
+          sku: workingSku,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", adId);
+    }
 
     await supabase
       .from("ads")
@@ -300,6 +320,7 @@ export async function publishAd(
             : {}) as Record<string, unknown>),
           ebay_offer_id: ensured.offerId,
           ebay_sku: workingSku,
+          ebay_sku_previous: ad.sku,
           ...(ensured.listingId ? { ebay_listing_id: ensured.listingId } : {}),
           ebay_policies: {
             fulfillment: policies.fulfillmentPolicyId,
@@ -307,6 +328,7 @@ export async function publishAd(
             returns: policies.returnPolicyId,
             location: policies.merchantLocationKey,
           },
+          publish_engine: "ss5",
         },
         updated_at: new Date().toISOString(),
       })
@@ -332,66 +354,25 @@ export async function publishAd(
       try {
         publishResult = await publishOffer(client, ensured.offerId);
       } catch (publishErr) {
-        if (!isEbayOfferUnavailableError(publishErr)) throw publishErr;
-
-        console.warn("[publish] offer unavailable — fresh policies + new SKU", {
+        const detail =
+          publishErr instanceof Error ? publishErr.message : String(publishErr);
+        console.error("[publish] publishOffer failed", {
           adId,
           offerId: ensured.offerId,
           sku: workingSku,
-          err: publishErr instanceof Error ? publishErr.message : publishErr,
+          policies,
+          detail,
         });
-
-        // Politiques 100 % fraîches (sandbox) + nouveau SKU pour éviter l’état corrompu
-        const freshPolicies = await resolveListingPolicies(client, undefined);
-        await supabase.from("user_settings").upsert(
+        throw new AppError(
+          "EBAY_ERROR",
+          `${detail} [ss5 sku=${workingSku} offer=${ensured.offerId}]`,
           {
-            user_id: userId,
-            politique_expedition_par_defaut: freshPolicies.fulfillmentPolicyId,
-            politique_paiement_par_defaut: freshPolicies.paymentPolicyId,
-            politique_retour_par_defaut: freshPolicies.returnPolicyId,
-            lieu_expedition_par_defaut: freshPolicies.merchantLocationKey,
-            updated_at: new Date().toISOString(),
+            status:
+              publishErr instanceof AppError ? publishErr.status : 502,
+            details:
+              publishErr instanceof AppError ? publishErr.details : undefined,
           },
-          { onConflict: "user_id" },
         );
-
-        workingSku = `${ad.sku}-r${Date.now().toString(36).slice(-5)}`;
-        await createInventoryItem(client, {
-          sku: workingSku,
-          title: ad.titre!,
-          description: ad.description!,
-          condition,
-          images: httpsImages,
-          aspects,
-          quantity: ad.quantite,
-        });
-
-        offerInput = buildOfferInput(workingSku, freshPolicies);
-        const recreated = await recreateOffer(client, offerInput);
-        ensured = { offerId: recreated.offerId, alreadyPublished: false };
-        publishResult = await publishOffer(client, recreated.offerId);
-
-        await supabase
-          .from("ads")
-          .update({
-            sku: workingSku,
-            metadata: {
-              ...((ad.metadata && typeof ad.metadata === "object"
-                ? ad.metadata
-                : {}) as Record<string, unknown>),
-              ebay_offer_id: recreated.offerId,
-              ebay_sku: workingSku,
-              ebay_sku_previous: ad.sku,
-              ebay_policies: {
-                fulfillment: freshPolicies.fulfillmentPolicyId,
-                payment: freshPolicies.paymentPolicyId,
-                returns: freshPolicies.returnPolicyId,
-                location: freshPolicies.merchantLocationKey,
-              },
-            },
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", adId);
       }
     }
 
@@ -501,7 +482,7 @@ export async function publishAd(
       })
       .eq("id", adId);
 
-    const friendly = humanizePublishError(err);
+    const friendly = `${humanizePublishError(err)} [ss5]`;
     return { error: friendly };
   }
 }
