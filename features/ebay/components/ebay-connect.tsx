@@ -81,8 +81,19 @@ export function EbayConnect({
               >
                 developer.ebay.com → Sandbox
               </a>
-              , puis utilisez ce login/mot de passe sur la page eBay qui
-              s’ouvre.
+              .
+            </p>
+            <p className="mt-2 text-amber-900/90">
+              Les annonces publiées apparaissent sur{" "}
+              <a
+                href="https://www.sandbox.ebay.fr/sh/lst/active"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2"
+              >
+                sandbox.ebay.fr → Mes annonces
+              </a>
+              , <strong>pas</strong> sur le vrai site ebay.fr.
             </p>
           </div>
         ) : null}

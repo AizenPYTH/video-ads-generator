@@ -8,6 +8,7 @@ import { decrypt } from "@/lib/crypto/encryption";
 import {
   createInventoryItem,
   ensureOffer,
+  getOffer,
   publishOffer,
 } from "@/services/ebay/inventory";
 import { resolveListingPolicies } from "@/services/ebay/sandbox-setup";
@@ -18,6 +19,11 @@ import {
   extractAspectSourcesFromAd,
 } from "@/services/ebay/aspects";
 import { getItemAspectsForCategory } from "@/services/ebay/taxonomy";
+import {
+  buildEbayListingUrl,
+  buildEbaySellerListingsUrl,
+  isEbaySandboxEnvironment,
+} from "@/services/ebay/listing-url";
 import { validateAdForPublish } from "@/features/ads/validation";
 import { fetchAdById } from "@/features/ads/queries";
 import type { IdentificationResult } from "@/types/identification";
@@ -28,6 +34,8 @@ export type PublishActionResult<T = void> = {
   error?: string;
   success?: boolean;
   data?: T;
+  /** Message UX (sandbox, lien, etc.) */
+  message?: string;
 };
 
 async function requireUserId(): Promise<string> {
@@ -93,7 +101,15 @@ async function getUserSettings(userId: string) {
 
 export async function publishAd(
   adId: string,
-): Promise<PublishActionResult<{ listingId: string; offerId: string }>> {
+): Promise<
+  PublishActionResult<{
+    listingId: string;
+    offerId: string;
+    listingUrl: string | null;
+    sellerListingsUrl: string;
+    sandbox: boolean;
+  }>
+> {
   try {
     const userId = await requireUserId();
     const ad = await fetchAdById(userId, adId);
@@ -146,11 +162,21 @@ export async function publishAd(
       .maybeSingle();
 
     if (existingPublication?.ebay_listing_id) {
+      const listingId = existingPublication.ebay_listing_id;
+      const listingUrl = buildEbayListingUrl(listingId);
+      const sellerListingsUrl = buildEbaySellerListingsUrl();
+      const sandbox = isEbaySandboxEnvironment();
       return {
         success: true,
+        message: sandbox
+          ? `Déjà publiée sur eBay Sandbox. Ouvrez : ${listingUrl ?? sellerListingsUrl}`
+          : `Déjà publiée sur eBay.`,
         data: {
-          listingId: existingPublication.ebay_listing_id,
+          listingId,
           offerId: "",
+          listingUrl,
+          sellerListingsUrl,
+          sandbox,
         },
       };
     }
@@ -292,12 +318,32 @@ export async function publishAd(
           }
         : await publishOffer(client, ensured.offerId);
 
+    // Vérifier côté eBay qu’un vrai listingId existe avant de marquer Publié
+    let listingId = publishResult.listingId?.trim() || "";
+    if (!listingId) {
+      const verified = await getOffer(client, publishResult.offerId);
+      listingId = verified?.listing?.listingId?.trim() || "";
+    }
+
+    if (!listingId) {
+      throw new AppError(
+        "EBAY_ERROR",
+        "eBay n’a pas confirmé d’ID d’annonce active. L’offre existe peut‑être en brouillon : réessayez « Publier », ou ouvrez Mes annonces sur sandbox.ebay.fr (pas ebay.fr).",
+        { status: 400 },
+      );
+    }
+
+    const listingUrl = buildEbayListingUrl(listingId);
+    const sellerListingsUrl = buildEbaySellerListingsUrl();
+    const sandbox = isEbaySandboxEnvironment();
+
     const { data: publication } = await supabase
       .from("listing_publications")
       .insert({
         user_id: userId,
         ad_id: adId,
-        ebay_listing_id: publishResult.listingId,
+        ebay_listing_id: listingId,
+        url_annonce: listingUrl,
         statut: "SUCCESS",
         published_at: new Date().toISOString(),
       })
@@ -314,8 +360,10 @@ export async function publishAd(
             ? ad.metadata
             : {}) as Record<string, unknown>),
           ebay_offer_id: publishResult.offerId,
-          ebay_listing_id: publishResult.listingId,
+          ebay_listing_id: listingId,
+          ebay_listing_url: listingUrl,
           ebay_sku: ad.sku,
+          ebay_environment: sandbox ? "sandbox" : "production",
         },
         updated_at: new Date().toISOString(),
       })
@@ -328,9 +376,10 @@ export async function publishAd(
       statut_apres: "PUBLISHED",
       action: "PUBLISH",
       details: {
-        listingId: publishResult.listingId,
+        listingId,
         offerId: publishResult.offerId,
-        reusedOffer: Boolean(ensured.alreadyPublished || ensured.offerId),
+        listingUrl,
+        sandbox,
       },
     });
 
@@ -339,7 +388,7 @@ export async function publishAd(
         user_id: userId,
         listing_publication_id: publication.id,
         statut: "SUCCESS",
-        reponse_ebay: publishResult,
+        reponse_ebay: { ...publishResult, listingId, listingUrl },
       });
     }
 
@@ -348,9 +397,20 @@ export async function publishAd(
     revalidatePath("/dashboard/annonces");
     revalidatePath(`/dashboard/annonces/${adId}`);
 
+    const message = sandbox
+      ? `Publiée sur eBay Sandbox (pas sur ebay.fr). Ouvrez : ${listingUrl ?? sellerListingsUrl}`
+      : `Publiée sur eBay. ${listingUrl ?? ""}`;
+
     return {
       success: true,
-      data: { listingId: publishResult.listingId, offerId: publishResult.offerId },
+      message,
+      data: {
+        listingId,
+        offerId: publishResult.offerId,
+        listingUrl,
+        sellerListingsUrl,
+        sandbox,
+      },
     };
   } catch (err) {
     const supabase = await createClient();
@@ -377,7 +437,7 @@ function humanizePublishError(err: unknown): string {
     return "Une offre eBay existe déjà pour ce SKU — réessayez, la publication va la réutiliser automatiquement.";
   }
   if (/already published|déjà publi/i.test(msg)) {
-    return "Cette annonce semble déjà publiée sur eBay. Rechargez la page.";
+    return "Cette annonce semble déjà publiée sur eBay Sandbox. Ouvrez sandbox.ebay.fr (pas ebay.fr) → Mes annonces.";
   }
   if (/marque compatible|compatible brand|item specific|caractéristique/i.test(msg)) {
     return msg;

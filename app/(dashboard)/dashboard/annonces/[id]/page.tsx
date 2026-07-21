@@ -5,6 +5,11 @@ import { validateAdForPublish } from "@/features/ads/validation";
 import { AdDetailEditor } from "@/features/ads/components/ad-detail-editor";
 import { ensureRemoteImagesOnAd } from "@/features/ads/ensure-ad-images";
 import { dedupeImageUrls } from "@/lib/images/dedupe";
+import {
+  buildEbayListingUrl,
+  buildEbaySellerListingsUrl,
+  isEbaySandboxEnvironment,
+} from "@/services/ebay/listing-url";
 import type { IdentificationResult } from "@/types/identification";
 import type { Ad } from "@/types/ads";
 
@@ -145,6 +150,30 @@ export default async function AnnonceDetailPage({ params }: PageProps) {
         })
       : null;
 
+  let listingId =
+    (typeof meta.ebay_listing_id === "string" && meta.ebay_listing_id) ||
+    null;
+
+  if (!listingId && ad.statut === "PUBLISHED") {
+    const { data: pub } = await supabase
+      .from("listing_publications")
+      .select("ebay_listing_id, url_annonce")
+      .eq("ad_id", id)
+      .eq("user_id", user.id)
+      .eq("statut", "SUCCESS")
+      .order("published_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    listingId = pub?.ebay_listing_id ?? null;
+    if (typeof pub?.url_annonce === "string" && pub.url_annonce) {
+      meta.ebay_listing_url = pub.url_annonce;
+    }
+  }
+
+  const listingUrl =
+    (typeof meta.ebay_listing_url === "string" && meta.ebay_listing_url) ||
+    buildEbayListingUrl(listingId);
+
   return (
     <AdDetailEditor
       adId={id}
@@ -176,6 +205,10 @@ export default async function AnnonceDetailPage({ params }: PageProps) {
       resolution={resolution}
       validation={validation}
       currency={(meta.currency as string) || "EUR"}
+      ebayListingId={listingId}
+      ebayListingUrl={listingUrl}
+      ebaySellerListingsUrl={buildEbaySellerListingsUrl()}
+      isSandbox={isEbaySandboxEnvironment()}
     />
   );
 }
