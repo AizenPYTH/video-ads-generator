@@ -74,6 +74,29 @@ describe("eBay publish idempotence", () => {
     expect(mockListings.size).toBe(1);
   });
 
+  it("treats #25713 as empty offers list for unknown SKU", async () => {
+    const { getOffersBySku, isEbayOfferUnavailableError } = await import(
+      "@/services/ebay/inventory"
+    );
+    const { AppError } = await import("@/lib/errors/app-error");
+    expect(
+      isEbayOfferUnavailableError(
+        new AppError(
+          "EBAY_ERROR",
+          "eBay API error: 404 — #25713 Cette offre n'est pas disponible.",
+          {
+            status: 404,
+            details: { errors: [{ errorId: 25713 }] },
+          },
+        ),
+      ),
+    ).toBe(true);
+    // mock: unknown SKU → []
+    await expect(getOffersBySku(client, "SKU-NEVER-EXISTS")).resolves.toEqual(
+      [],
+    );
+  });
+
   it("reuses existing offer for same SKU instead of failing", async () => {
     await createInventoryItem(client, inventoryInput);
     const first = await ensureOffer(client, offerInput);

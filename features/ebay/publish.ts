@@ -268,7 +268,7 @@ export async function publishAd(
     if (!inventoryOk) {
       throw new AppError(
         "EBAY_ERROR",
-        "L’article d’inventaire eBay n’a pas été créé (SKU introuvable après écriture). Réessayez. [ss5]",
+        "L’article d’inventaire eBay n’a pas été créé (SKU introuvable après écriture). Réessayez. [ss6]",
         { status: 502 },
       );
     }
@@ -328,7 +328,7 @@ export async function publishAd(
             returns: policies.returnPolicyId,
             location: policies.merchantLocationKey,
           },
-          publish_engine: "ss5",
+          publish_engine: "ss6",
         },
         updated_at: new Date().toISOString(),
       })
@@ -365,7 +365,7 @@ export async function publishAd(
         });
         throw new AppError(
           "EBAY_ERROR",
-          `${detail} [ss5 sku=${workingSku} offer=${ensured.offerId}]`,
+          `${detail} [ss6 sku=${workingSku} offer=${ensured.offerId}]`,
           {
             status:
               publishErr instanceof AppError ? publishErr.status : 502,
@@ -482,7 +482,7 @@ export async function publishAd(
       })
       .eq("id", adId);
 
-    const friendly = `${humanizePublishError(err)} [ss5]`;
+    const friendly = `${humanizePublishError(err)} [ss6]`;
     return { error: friendly };
   }
 }

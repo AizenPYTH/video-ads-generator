@@ -139,8 +139,11 @@ export function isEbayOfferUnavailableError(err: unknown): boolean {
   const details = err.details;
   if (details && typeof details === "object") {
     const errors = (details as { errors?: Array<{ errorId?: number }> }).errors;
-    // 25710 = entity not found (Inventory)
-    if (Array.isArray(errors) && errors.some((e) => e.errorId === 25710)) {
+    // 25710 = entity not found ; 25713 = offer not available (aussi = aucune offre pour le SKU)
+    if (
+      Array.isArray(errors) &&
+      errors.some((e) => e.errorId === 25710 || e.errorId === 25713)
+    ) {
       return true;
     }
   }
@@ -325,10 +328,17 @@ export async function getOffersBySku(
   }
 
   const marketplace = marketplaceId ?? client.marketplace;
-  const data = await client.get<OffersBySkuResponse>(
-    `/sell/inventory/v1/offer?sku=${encodeURIComponent(sku)}&marketplace_id=${encodeURIComponent(marketplace)}&limit=25`,
-  );
-  return data.offers ?? [];
+  try {
+    const data = await client.get<OffersBySkuResponse>(
+      `/sell/inventory/v1/offer?sku=${encodeURIComponent(sku)}&marketplace_id=${encodeURIComponent(marketplace)}&limit=25`,
+    );
+    return data.offers ?? [];
+  } catch (err) {
+    // eBay renvoie 404 / #25713 quand AUCUNE offre n’existe pour le SKU
+    // (« Cette offre n'est pas disponible ») — ce n’est pas une erreur fatale.
+    if (isEbayOfferUnavailableError(err)) return [];
+    throw err;
+  }
 }
 
 export async function getOffer(
