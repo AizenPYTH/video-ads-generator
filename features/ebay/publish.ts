@@ -9,7 +9,7 @@ import {
   getOffer,
   getInventoryItem,
   publishOffer,
-  recreateOffer,
+  createOffer,
 } from "@/services/ebay/inventory";
 import { resolveListingPolicies } from "@/services/ebay/sandbox-setup";
 import { toEbayInventoryCondition } from "@/services/ebay/condition";
@@ -268,7 +268,7 @@ export async function publishAd(
     if (!inventoryOk) {
       throw new AppError(
         "EBAY_ERROR",
-        "L’article d’inventaire eBay n’a pas été créé (SKU introuvable après écriture). Réessayez. [ss6]",
+        "L’article d’inventaire eBay n’a pas été créé (SKU introuvable après écriture). Réessayez. [ss7]",
         { status: 502 },
       );
     }
@@ -291,10 +291,13 @@ export async function publishAd(
 
     const offerInput = buildOfferInput(workingSku, policies);
 
-    // Sandbox : purge + create. Prod : réutilise si possible.
+    // Sandbox + SKU unique : createOffer direct (PAS de GET /offer?sku=).
+    // eBay renvoie #25713 sur ce GET quand aucune offre n’existe — ce n’est
+    // pas une erreur métier, mais ss5 le traitait comme fatale et bloquait
+    // createOffer. On évite complètement cet appel pour un SKU neuf.
     let ensured = sandboxPublish
       ? {
-          ...(await recreateOffer(client, offerInput)),
+          ...(await createOffer(client, offerInput)),
           alreadyPublished: false as boolean,
           listingId: undefined as string | undefined,
         }
@@ -328,7 +331,7 @@ export async function publishAd(
             returns: policies.returnPolicyId,
             location: policies.merchantLocationKey,
           },
-          publish_engine: "ss6",
+          publish_engine: "ss7",
         },
         updated_at: new Date().toISOString(),
       })
@@ -351,6 +354,13 @@ export async function publishAd(
         status: "PUBLISHED",
       };
     } else {
+      if (!ensured.offerId) {
+        throw new AppError(
+          "EBAY_ERROR",
+          "createOffer n’a renvoyé aucun offerId. [ss7]",
+          { status: 502 },
+        );
+      }
       try {
         publishResult = await publishOffer(client, ensured.offerId);
       } catch (publishErr) {
@@ -365,7 +375,7 @@ export async function publishAd(
         });
         throw new AppError(
           "EBAY_ERROR",
-          `${detail} [ss6 sku=${workingSku} offer=${ensured.offerId}]`,
+          `${detail} [ss7 sku=${workingSku} offer=${ensured.offerId}]`,
           {
             status:
               publishErr instanceof AppError ? publishErr.status : 502,
@@ -482,7 +492,7 @@ export async function publishAd(
       })
       .eq("id", adId);
 
-    const friendly = `${humanizePublishError(err)} [ss6]`;
+    const friendly = `${humanizePublishError(err)} [ss7]`;
     return { error: friendly };
   }
 }
