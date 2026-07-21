@@ -268,26 +268,30 @@ export async function ensureSellerDefaults(
     location: false,
   };
 
-  // Sandbox : supprimer les anciennes politiques d’expédition Smart Seller
-  // (ex. FR_StandardDelivery invalide) pour les recréer correctement.
-  if (allowCreate) {
-    for (const policy of policies.fulfillment) {
-      if (/smart\s*seller/i.test(policy.name)) {
-        try {
-          await client.delete(
-            `/sell/account/v1/fulfillment_policy/${encodeURIComponent(policy.id)}`,
-          );
-        } catch {
-          // ignore
-        }
-      }
-    }
-    policies = await fetchEbayPolicies(client);
-  }
-
+  // Ne plus supprimer automatiquement les politiques Smart Seller :
+  // ça invalidait les IDs stockés dans user_settings et cassait publishOffer (404).
   let fulfillmentPolicyId = policies.fulfillment[0]?.id ?? "";
   let returnPolicyId = policies.returns[0]?.id ?? "";
   let paymentPolicyId = policies.payment[0]?.id ?? "";
+
+  // Si une vieille politique FR_StandardDelivery invalide est la seule,
+  // on en crée une nouvelle (sans tout effacer).
+  const fulfillmentLooksBroken = policies.fulfillment.some((p) =>
+    /FR_StandardDelivery/i.test(p.name),
+  );
+  if (
+    allowCreate &&
+    fulfillmentLooksBroken &&
+    policies.fulfillment.every((p) => /FR_StandardDelivery|smart\s*seller/i.test(p.name))
+  ) {
+    try {
+      fulfillmentPolicyId = await createFulfillmentPolicy(client);
+      created.fulfillment = true;
+      policies = await fetchEbayPolicies(client);
+    } catch {
+      // garder l’existant
+    }
+  }
 
   if (!fulfillmentPolicyId || !returnPolicyId || !paymentPolicyId) {
     if (!allowCreate) {
@@ -349,6 +353,8 @@ export const configureEbaySellerDefaults = ensureSellerDefaults;
 /**
  * Résout politiques + lieu pour publier.
  * Sandbox : crée automatiquement le manquant. Production : réutilise l’existant.
+ * Ne fait JAMAIS confiance aux IDs préférés sans vérifier qu’ils existent encore
+ * (sinon publishOffer → 404 « offre non disponible » après reconnexion OAuth).
  */
 export async function resolveListingPolicies(
   client: EbayClient,
@@ -369,18 +375,41 @@ export async function resolveListingPolicies(
     };
   }
 
-  const preferredReady =
-    preferred?.fulfillmentPolicyId?.trim() &&
-    preferred?.paymentPolicyId?.trim() &&
-    preferred?.returnPolicyId?.trim() &&
-    preferred?.merchantLocationKey?.trim();
+  const existing = await fetchEbayPolicies(client);
 
-  if (preferredReady) {
+  const fulfillmentPreferred = preferred?.fulfillmentPolicyId?.trim() || "";
+  const paymentPreferred = preferred?.paymentPolicyId?.trim() || "";
+  const returnPreferred = preferred?.returnPolicyId?.trim() || "";
+  const locationPreferred = preferred?.merchantLocationKey?.trim() || "";
+
+  const fulfillmentOk =
+    Boolean(fulfillmentPreferred) &&
+    existing.fulfillment.some((p) => p.id === fulfillmentPreferred);
+  const paymentOk =
+    Boolean(paymentPreferred) &&
+    existing.payment.some((p) => p.id === paymentPreferred);
+  const returnOk =
+    Boolean(returnPreferred) &&
+    existing.returns.some((p) => p.id === returnPreferred);
+
+  let locationOk = false;
+  if (locationPreferred) {
+    try {
+      await client.get(
+        `/sell/inventory/v1/location/${encodeURIComponent(locationPreferred)}`,
+      );
+      locationOk = true;
+    } catch {
+      locationOk = false;
+    }
+  }
+
+  if (fulfillmentOk && paymentOk && returnOk && locationOk) {
     return {
-      fulfillmentPolicyId: preferred!.fulfillmentPolicyId!.trim(),
-      paymentPolicyId: preferred!.paymentPolicyId!.trim(),
-      returnPolicyId: preferred!.returnPolicyId!.trim(),
-      merchantLocationKey: preferred!.merchantLocationKey!.trim(),
+      fulfillmentPolicyId: fulfillmentPreferred,
+      paymentPolicyId: paymentPreferred,
+      returnPolicyId: returnPreferred,
+      merchantLocationKey: locationPreferred,
     };
   }
 
@@ -389,13 +418,14 @@ export async function resolveListingPolicies(
   });
 
   return {
-    fulfillmentPolicyId:
-      preferred?.fulfillmentPolicyId?.trim() || setup.fulfillmentPolicyId,
-    paymentPolicyId:
-      preferred?.paymentPolicyId?.trim() || setup.paymentPolicyId,
-    returnPolicyId: preferred?.returnPolicyId?.trim() || setup.returnPolicyId,
-    merchantLocationKey:
-      preferred?.merchantLocationKey?.trim() || setup.merchantLocationKey,
+    fulfillmentPolicyId: fulfillmentOk
+      ? fulfillmentPreferred
+      : setup.fulfillmentPolicyId,
+    paymentPolicyId: paymentOk ? paymentPreferred : setup.paymentPolicyId,
+    returnPolicyId: returnOk ? returnPreferred : setup.returnPolicyId,
+    merchantLocationKey: locationOk
+      ? locationPreferred
+      : setup.merchantLocationKey,
   };
 }
 

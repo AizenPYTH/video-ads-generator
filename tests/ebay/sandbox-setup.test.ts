@@ -26,4 +26,20 @@ describe("ensureSellerDefaults guards", () => {
     expect(result.merchantLocationKey).toBe("entrepot-principal");
     expect(result.fulfillmentPolicyId).toBeTruthy();
   });
+
+  it("resolveListingPolicies accepts preferred ids in mock mode", async () => {
+    const { resolveListingPolicies } = await import(
+      "@/services/ebay/sandbox-setup"
+    );
+    const { EbayClient } = await import("@/services/ebay/client");
+    const client = new EbayClient({ accessToken: "mock" });
+    const result = await resolveListingPolicies(client, {
+      fulfillmentPolicyId: "f1",
+      paymentPolicyId: "p1",
+      returnPolicyId: "r1",
+      merchantLocationKey: "loc-1",
+    });
+    expect(result.merchantLocationKey).toBe("loc-1");
+    expect(result.fulfillmentPolicyId).toBe("mock-fulfillment-1");
+  });
 });

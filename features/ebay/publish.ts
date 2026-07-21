@@ -504,6 +504,9 @@ function humanizePublishError(err: unknown): string {
   if (/policy|politique/i.test(msg)) {
     return `Politiques eBay invalides ou manquantes. ${msg}`;
   }
+  if (/pas disponible|not available/i.test(msg)) {
+    return "Offre eBay invalide (souvent des politiques/lieu expirés après reconnexion). Réessayez — Smart Seller régénère les politiques automatiquement.";
+  }
   if (/location|lieu|merchant/i.test(msg)) {
     return `Lieu d’expédition eBay manquant ou invalide. ${msg}`;
   }
