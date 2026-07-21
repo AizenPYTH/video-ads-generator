@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState, useTransition, type Dispatch, type SetStateAction } from "react";
 import { toast } from "sonner";
 import {
   Loader2,
@@ -40,7 +40,7 @@ export type EditorAdImage = {
 type Props = {
   adId: string;
   images: EditorAdImage[];
-  onImagesChange: (images: EditorAdImage[]) => void;
+  onImagesChange: Dispatch<SetStateAction<EditorAdImage[]>>;
   disabled?: boolean;
 };
 
