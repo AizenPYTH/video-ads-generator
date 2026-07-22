@@ -193,14 +193,21 @@ export function MarketingSettings({ template }: MarketingSettingsProps) {
 
       <fieldset className="space-y-3" disabled={isLoading}>
         <legend className="text-sm font-medium">Image marketing</legend>
+        <p className="text-sm text-muted-foreground">
+          Visuel optionnel pour votre compte (aperçu limité ci-dessous). Ce
+          n’est pas le cadre d’annonce Snowwolf : pour encadrer un produit,
+          utilisez « Générer image » depuis une annonce.
+        </p>
         {imageUrl && imageFiles.length === 0 && (
-          <div className="space-y-3 rounded-lg border p-3">
-            <div
-              role="img"
-              aria-label="Aperçu de l’image marketing actuelle"
-              className="aspect-video w-full rounded-md bg-cover bg-center bg-no-repeat"
-              style={{ backgroundImage: `url("${imageUrl}")` }}
-            />
+          <div className="space-y-3 rounded-lg border border-[var(--ss-border)] p-3">
+            <div className="mx-auto flex max-w-[220px] items-center justify-center rounded-md bg-[var(--ss-surface-muted)] p-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={imageUrl}
+                alt="Aperçu de l’image marketing actuelle"
+                className="max-h-48 w-auto max-w-full rounded object-contain"
+              />
+            </div>
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm text-muted-foreground">Image actuelle</p>
               <Button

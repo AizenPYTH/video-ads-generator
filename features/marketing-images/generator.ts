@@ -42,10 +42,13 @@ export type MarketingGenerationLog = {
 };
 
 const OUTPUT = 1024;
-/** Zone blanche du cadre d’annonce (produit au centre). */
-const FRAME_ZONE = { x: 197, y: 201, w: 628, h: 668 };
-/** Marge pour ne pas couvrir les badges hexagonaux. */
-const ZONE_INSET = 72;
+/** Zone blanche centrale du cadre (mesurée sur listing-frame). */
+const FRAME_ZONE = { x: 186, y: 186, w: 648, h: 710 };
+/**
+ * Le produit occupe une fraction de la zone (pas tout le blanc) :
+ * trop grand = aspect « nul », badges écrasés.
+ */
+const PRODUCT_FILL = 0.58;
 
 function getFramePath(): string {
   return path.join(process.cwd(), "public", "brand", "listing-frame.png");
@@ -199,8 +202,8 @@ export async function generateMarketingImage(
     config.useSnowolfFrame !== false &&
     existsSync(framePath);
 
-  const usableW = FRAME_ZONE.w - ZONE_INSET * 2;
-  const usableH = FRAME_ZONE.h - ZONE_INSET * 2;
+  const usableW = Math.round(FRAME_ZONE.w * PRODUCT_FILL);
+  const usableH = Math.round(FRAME_ZONE.h * PRODUCT_FILL);
   const productResized = await sharp(productBuffer)
     .resize(usableW, usableH, {
       fit: "inside",

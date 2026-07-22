@@ -401,7 +401,7 @@ export function AdDetailEditor({
           if (!open) setMarketingPreview(null);
         }}
       >
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Aperçu image {APP_NAME}</DialogTitle>
             <DialogDescription>
@@ -413,7 +413,7 @@ export function AdDetailEditor({
             <img
               src={marketingPreview}
               alt={`Aperçu ${APP_NAME}`}
-              className="mx-auto max-h-[60vh] w-full rounded-lg object-contain"
+              className="mx-auto max-h-[min(52vh,420px)] w-auto max-w-full rounded-lg object-contain"
             />
           )}
           <DialogFooter className="gap-2 sm:gap-0">
