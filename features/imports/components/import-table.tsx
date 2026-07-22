@@ -243,31 +243,46 @@ function RowBlock({
     startTransition(async () => {
       let ok = 0;
       let fail = 0;
+      const errorCounts = new Map<string, number>();
+
       for (const adId of ids) {
         try {
           const result = await publishAd(adId);
           if (result.error) {
             fail++;
-            toast.error(result.error);
+            const key = result.error.trim() || "Échec de publication.";
+            errorCounts.set(key, (errorCounts.get(key) ?? 0) + 1);
           } else {
             ok++;
           }
         } catch (err) {
           fail++;
-          toast.error(
-            err instanceof Error ? err.message : "Échec de publication.",
-          );
+          const key =
+            err instanceof Error ? err.message : "Échec de publication.";
+          errorCounts.set(key, (errorCounts.get(key) ?? 0) + 1);
         }
       }
+
       if (ok > 0) {
         toast.success(
           `${ok} annonce${ok > 1 ? "s" : ""} publiée${ok > 1 ? "s" : ""}.`,
         );
       }
-      if (fail === 0) setSelected(new Set());
-      else if (ok > 0) {
-        toast.message(`${fail} échec${fail > 1 ? "s" : ""} restant${fail > 1 ? "s" : ""}.`);
+
+      if (fail > 0) {
+        const parts = [...errorCounts.entries()].map(([message, count]) =>
+          count > 1 ? `${message} (×${count})` : message,
+        );
+        const summary =
+          fail === ids.length
+            ? `${fail} annonce${fail > 1 ? "s" : ""} non publiée${fail > 1 ? "s" : ""}`
+            : `${fail} échec${fail > 1 ? "s" : ""}`;
+        toast.error([summary, ...parts].join(" — "), {
+          duration: 8000,
+        });
       }
+
+      if (fail === 0) setSelected(new Set());
     });
   }
 
