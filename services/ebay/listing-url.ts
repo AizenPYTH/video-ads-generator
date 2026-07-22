@@ -7,8 +7,10 @@
  * ne pas confondre avec sandbox.ebay.com ni le vrai ebay.fr.
  */
 
+import { resolveEbayApiHost } from "./client";
+
 export function isEbaySandboxEnvironment(): boolean {
-  return process.env.EBAY_ENVIRONMENT !== "production";
+  return resolveEbayApiHost().includes("sandbox");
 }
 
 export function getEbaySiteOrigin(): string {

@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "crypto";
 import { AppError } from "@/lib/errors/app-error";
 import { encrypt, decrypt } from "@/lib/crypto/encryption";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { isEbayMockMode } from "./client";
+import { isEbayMockMode, resolveEbayApiHost } from "./client";
 import { mockOAuthTokens } from "./mock";
 
 export interface EbayTokens {
@@ -11,39 +11,54 @@ export interface EbayTokens {
   expiresAt: Date;
 }
 
+/** Nettoie les secrets Vercel (guillemets, espaces, retours ligne). */
+function sanitizeEnv(value: string | undefined | null): string {
+  if (!value) return "";
+  let v = value.trim();
+  if (
+    (v.startsWith('"') && v.endsWith('"')) ||
+    (v.startsWith("'") && v.endsWith("'"))
+  ) {
+    v = v.slice(1, -1).trim();
+  }
+  return v.replace(/\r?\n/g, "").trim();
+}
+
 function getEbayAuthUrl(): string {
-  const configured = process.env.EBAY_AUTH_URL?.trim();
+  const configured = sanitizeEnv(process.env.EBAY_AUTH_URL);
   if (configured) {
     // Ne jamais utiliser l'URL API pour l'authorize (et inversement).
     if (configured.includes("api.")) {
-      return process.env.EBAY_ENVIRONMENT === "production"
-        ? "https://auth.ebay.com"
-        : "https://auth.sandbox.ebay.com";
+      return resolveEbayApiHost().includes("sandbox")
+        ? "https://auth.sandbox.ebay.com"
+        : "https://auth.ebay.com";
     }
     return configured.replace(/\/$/, "");
   }
 
-  return process.env.EBAY_ENVIRONMENT === "production"
-    ? "https://auth.ebay.com"
-    : "https://auth.sandbox.ebay.com";
+  return resolveEbayApiHost().includes("sandbox")
+    ? "https://auth.sandbox.ebay.com"
+    : "https://auth.ebay.com";
 }
 
-/** Token endpoint = api.ebay.com (pas auth.ebay.com). */
-function getEbayTokenUrl(): string {
-  const configured = process.env.EBAY_API_URL?.trim();
-  if (configured) {
-    return `${configured.replace(/\/$/, "")}/identity/v1/oauth2/token`;
-  }
+function tokenUrlForHost(apiHost: string): string {
+  return `${apiHost.replace(/\/$/, "")}/identity/v1/oauth2/token`;
+}
 
-  return process.env.EBAY_ENVIRONMENT === "production"
+/** Endpoints token à essayer (alignés sur les credentials). */
+function candidateTokenUrls(): string[] {
+  const host = resolveEbayApiHost();
+  const primary = tokenUrlForHost(host);
+  const alternate = host.includes("sandbox")
     ? "https://api.ebay.com/identity/v1/oauth2/token"
     : "https://api.sandbox.ebay.com/identity/v1/oauth2/token";
+  return [...new Set([primary, alternate])];
 }
 
 function getClientCredentials() {
-  const clientId = process.env.EBAY_CLIENT_ID;
-  const clientSecret = process.env.EBAY_CLIENT_SECRET;
-  const ruName = process.env.EBAY_RUNAME;
+  const clientId = sanitizeEnv(process.env.EBAY_CLIENT_ID);
+  const clientSecret = sanitizeEnv(process.env.EBAY_CLIENT_SECRET);
+  const ruName = sanitizeEnv(process.env.EBAY_RUNAME);
 
   if (!clientId || !clientSecret || !ruName) {
     throw AppError.internal("eBay OAuth credentials are not configured");
@@ -90,17 +105,20 @@ export function getEbayAuthorizationUrl(state: string): string {
   return url.toString();
 }
 
-async function exchangeToken(
+async function exchangeTokenAtUrl(
+  tokenUrl: string,
   params: Record<string, string>,
-): Promise<{ access_token: string; refresh_token: string; expires_in: number }> {
-  if (isEbayMockMode()) {
-    return mockOAuthTokens;
-  }
+  clientId: string,
+  clientSecret: string,
+): Promise<
+  | { ok: true; data: { access_token: string; refresh_token: string; expires_in: number } }
+  | { ok: false; status: number; body: string }
+> {
+  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString(
+    "base64",
+  );
 
-  const { clientId, clientSecret } = getClientCredentials();
-  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
-
-  const response = await fetch(getEbayTokenUrl(), {
+  const response = await fetch(tokenUrl, {
     method: "POST",
     headers: {
       Authorization: `Basic ${credentials}`,
@@ -110,12 +128,82 @@ async function exchangeToken(
     signal: AbortSignal.timeout(15_000),
   });
 
+  const errorBody = await response.text();
   if (!response.ok) {
-    const errorBody = await response.text();
-    throw AppError.internal(`eBay token exchange failed: ${errorBody}`);
+    return { ok: false, status: response.status, body: errorBody };
   }
 
-  return response.json();
+  try {
+    const data = JSON.parse(errorBody) as {
+      access_token: string;
+      refresh_token: string;
+      expires_in: number;
+    };
+    return { ok: true, data };
+  } catch {
+    return { ok: false, status: response.status, body: errorBody };
+  }
+}
+
+async function exchangeToken(
+  params: Record<string, string>,
+): Promise<{ access_token: string; refresh_token: string; expires_in: number }> {
+  if (isEbayMockMode()) {
+    return mockOAuthTokens;
+  }
+
+  const { clientId, clientSecret } = getClientCredentials();
+  const urls = candidateTokenUrls();
+  let lastBody = "";
+  let lastStatus = 0;
+
+  for (const tokenUrl of urls) {
+    const result = await exchangeTokenAtUrl(
+      tokenUrl,
+      params,
+      clientId,
+      clientSecret,
+    );
+    if (result.ok) {
+      console.info("[ebay-oauth] token exchange ok", {
+        host: tokenUrl.includes("sandbox") ? "sandbox" : "production",
+        grant: params.grant_type,
+        clientPrefix: clientId.slice(0, 16),
+      });
+      return result.data;
+    }
+
+    lastBody = result.body;
+    lastStatus = result.status;
+    console.warn("[ebay-oauth] token exchange failed", {
+      host: tokenUrl.includes("sandbox") ? "sandbox" : "production",
+      status: result.status,
+      grant: params.grant_type,
+      clientPrefix: clientId.slice(0, 16),
+      body: result.body.slice(0, 160),
+    });
+
+    // invalid_client → essayer l'autre environnement ; invalid_grant → inutile
+    if (!/invalid_client/i.test(result.body)) {
+      break;
+    }
+  }
+
+  if (/invalid_client/i.test(lastBody)) {
+    throw AppError.internal(
+      "eBay token exchange failed: invalid_client — vérifiez EBAY_CLIENT_ID / EBAY_CLIENT_SECRET / EBAY_ENVIRONMENT (sandbox vs production) sur Vercel, puis reconnectez le compte eBay.",
+    );
+  }
+
+  if (/invalid_grant/i.test(lastBody)) {
+    throw AppError.internal(
+      "eBay token expiré ou invalide — reconnectez votre compte eBay dans Paramètres / eBay.",
+    );
+  }
+
+  throw AppError.internal(
+    `eBay token exchange failed (HTTP ${lastStatus}): ${lastBody.slice(0, 200)}`,
+  );
 }
 
 export async function exchangeAuthorizationCode(
@@ -233,9 +321,16 @@ export async function getEbayTokens(workspaceId: string): Promise<EbayTokens | n
 
   if (expiresAt.getTime() - Date.now() < 5 * 60 * 1000) {
     if (!refreshToken) return null;
-    const refreshed = await refreshAccessToken(refreshToken);
-    await storeEbayTokens(workspaceId, refreshed);
-    return refreshed;
+    try {
+      const refreshed = await refreshAccessToken(refreshToken);
+      await storeEbayTokens(workspaceId, refreshed);
+      return refreshed;
+    } catch (err) {
+      console.error("[ebay-oauth] refresh failed", {
+        message: err instanceof Error ? err.message : "refresh_error",
+      });
+      throw err;
+    }
   }
 
   return { accessToken, refreshToken, expiresAt };

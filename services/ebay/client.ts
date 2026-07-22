@@ -12,17 +12,47 @@ export function isEbayMockMode(): boolean {
   return process.env.EBAY_MOCK_MODE === "true";
 }
 
+function sanitizeEnvValue(value: string | undefined | null): string {
+  if (!value) return "";
+  let v = value.trim();
+  if (
+    (v.startsWith('"') && v.endsWith('"')) ||
+    (v.startsWith("'") && v.endsWith("'"))
+  ) {
+    v = v.slice(1, -1).trim();
+  }
+  return v.replace(/\r?\n/g, "").trim();
+}
+
+/**
+ * Host API eBay cohérent avec les credentials.
+ * Priorité : hint Client ID (SBX/PRD) > EBAY_API_URL > EBAY_ENVIRONMENT.
+ */
+export function resolveEbayApiHost(): string {
+  const clientId = sanitizeEnvValue(process.env.EBAY_CLIENT_ID);
+  if (/SBX/i.test(clientId)) {
+    return "https://api.sandbox.ebay.com";
+  }
+  if (/PRD/i.test(clientId)) {
+    return "https://api.ebay.com";
+  }
+
+  const configured = sanitizeEnvValue(process.env.EBAY_API_URL);
+  if (configured) {
+    return configured.replace(/\/$/, "");
+  }
+
+  return sanitizeEnvValue(process.env.EBAY_ENVIRONMENT) === "production"
+    ? "https://api.ebay.com"
+    : "https://api.sandbox.ebay.com";
+}
+
 export function getEbayApiUrl(): string {
-  return (
-    process.env.EBAY_API_URL?.trim() ||
-    (process.env.EBAY_ENVIRONMENT === "production"
-      ? "https://api.ebay.com"
-      : "https://api.sandbox.ebay.com")
-  );
+  return resolveEbayApiHost();
 }
 
 export function getEbayMarketplaceId(): string {
-  return process.env.EBAY_MARKETPLACE_ID ?? "EBAY_FR";
+  return sanitizeEnvValue(process.env.EBAY_MARKETPLACE_ID) || "EBAY_FR";
 }
 
 export class EbayClient {
