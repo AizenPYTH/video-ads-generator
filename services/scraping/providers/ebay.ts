@@ -26,154 +26,255 @@ export class EbayProductProvider implements ProductPageProvider {
   }
 
   async scrape(url: string): Promise<ScrapedProduct> {
-    const { html } = await fetchWithScrapingBee({
-      url,
-      renderJs: true,
-      premiumProxy: true,
-      countryCode: "fr",
-      waitMs: 4000,
-      blockResources: false,
-    });
+    let html = (
+      await fetchWithScrapingBee({
+        url,
+        renderJs: true,
+        premiumProxy: true,
+        countryCode: "fr",
+        waitMs: 4000,
+        blockResources: false,
+      })
+    ).html;
 
-    const jsonLd = extractJsonLd(html);
-    const itemSpecifics = extractAllItemSpecifics(html);
+    let parsed = parseEbayProductHtml(html, url);
 
-    const title =
-      (jsonLd?.name ? String(jsonLd.name) : null) ??
-      extractMeta(html, "og:title") ??
-      extractBetween(
-        html,
-        /<h1[^>]*class="[^"]*x-item-title[^"]*"[^>]*>([\s\S]*?)<\/h1>/i,
-      ) ??
-      extractBetween(html, /<title>([\s\S]*?)<\/title>/i) ??
-      "Produit eBay";
-
-    const cleanTitle = decodeHtmlEntities(stripTags(title).trim());
-
-    const priceText =
-      extractMeta(html, "product:price:amount") ??
-      extractBetween(html, /itemprop="price"[^>]*content="([^"]+)"/i) ??
-      extractBetween(
-        html,
-        /class="[^"]*x-price-primary[^"]*"[^>]*>[\s\S]*?([0-9]+[.,][0-9]+)/i,
-      ) ??
-      (jsonLd?.offers &&
-      !Array.isArray(jsonLd.offers) &&
-      jsonLd.offers.price != null
-        ? String(jsonLd.offers.price)
-        : null);
-
-    const currency =
-      extractMeta(html, "product:price:currency") ??
-      extractBetween(html, /itemprop="priceCurrency"[^>]*content="([^"]+)"/i) ??
-      (jsonLd?.offers &&
-      !Array.isArray(jsonLd.offers) &&
-      jsonLd.offers.priceCurrency
-        ? String(jsonLd.offers.priceCurrency)
-        : null) ??
-      "EUR";
-
-    const images = [
-      ...extractAll(
-        html,
-        /<meta[^>]*property="og:image"[^>]*content="([^"]+)"/gi,
-      ),
-      ...(jsonLd?.image
-        ? Array.isArray(jsonLd.image)
-          ? jsonLd.image.map((img) =>
-              typeof img === "string" ? img : (img?.url ?? ""),
-            )
-          : [String(jsonLd.image)]
-        : []),
-    ].filter(Boolean);
-
-    const description =
-      (jsonLd?.description ? String(jsonLd.description) : null) ??
-      extractMeta(html, "og:description") ??
-      extractBetween(html, /id="desc_div"[^>]*>([\s\S]*?)<\/div>/i);
-
-    const sku =
-      pickSpecific(itemSpecifics, [
-        "MPN",
-        "Numéro de pièce fabricant",
-        "Numero de piece fabricant",
-        "Référence fabricant",
-        "Manufacturer Part Number",
-      ]) ??
-      (jsonLd?.mpn ? String(jsonLd.mpn) : null) ??
-      (jsonLd?.sku ? String(jsonLd.sku) : null) ??
-      null;
-
-    let condition =
-      pickSpecific(itemSpecifics, ["Condition", "État", "Etat", "Zustands"]) ??
-      (jsonLd?.itemCondition ? String(jsonLd.itemCondition) : null) ??
-      null;
-    if (condition && /^(particulier|professionnel)$/i.test(condition)) {
-      condition = null;
-      delete itemSpecifics.État;
-      delete itemSpecifics.Etat;
-      delete itemSpecifics.Condition;
+    // Retry stealth si titre / prix absents (pages tracking / anti-bot)
+    if (isWeakEbayParse(parsed)) {
+      console.warn("[ebay-scrape] weak parse, retry stealth", {
+        title: parsed.title.slice(0, 40),
+        price: parsed.price,
+      });
+      html = (
+        await fetchWithScrapingBee({
+          url,
+          renderJs: true,
+          premiumProxy: true,
+          stealthProxy: true,
+          countryCode: "fr",
+          waitMs: 5500,
+          blockResources: false,
+        })
+      ).html;
+      parsed = parseEbayProductHtml(html, url);
     }
 
-    // Type : page eBay d’abord, sinon inférence titre (ex. « Écran iPhone 11 »)
-    if (!pickSpecific(itemSpecifics, ["Type", "Product Type", "Type de produit"])) {
-      const inferred = inferProductTypeFromTitle(cleanTitle);
-      if (inferred) {
-        itemSpecifics.Type = inferred;
-      }
-    }
-
-    // Normaliser « Pour Apple » (eBay FR) → Compatible Brand + Marque OEM
-    normalizeEbayFrSpecifics(itemSpecifics, cleanTitle);
-
-    const brand =
-      pickSpecific(itemSpecifics, ["Brand", "Marque", "Marke", "Marca"]) ??
-      brandFromJsonLd(jsonLd) ??
-      null;
-
-    if (brand) {
-      itemSpecifics.Brand ??= brand;
-      itemSpecifics.Marque ??= brand;
-    }
-
-    // Pièces : Marque compatible depuis titre si absente
-    if (
-      !pickSpecific(itemSpecifics, ["Compatible Brand", "Marque compatible"])
-    ) {
-      const fromTitle = inferCompatibleBrandFromTitle(cleanTitle);
-      if (fromTitle) {
-        itemSpecifics["Compatible Brand"] = fromTitle;
-        itemSpecifics["Marque compatible"] = fromTitle;
-      }
-    }
-
-    if (
-      !pickSpecific(itemSpecifics, ["Brand", "Marque"]) &&
-      pickSpecific(itemSpecifics, ["Compatible Brand", "Marque compatible"])
-    ) {
-      itemSpecifics.Brand = "OEM";
-      itemSpecifics.Marque = "OEM";
-    }
-
-    return {
-      title: cleanTitle,
-      description: description
-        ? decodeHtmlEntities(stripTags(description).trim())
-        : null,
-      price: parsePrice(priceText),
-      currency,
-      images: [...new Set(images)],
-      brand,
-      sku,
-      condition,
-      itemSpecifics,
-      sourceUrl: url,
-      raw: {
-        provider: this.name,
-        itemSpecificKeys: Object.keys(itemSpecifics),
-      },
-    };
+    return parsed;
   }
+}
+
+function isWeakEbayParse(product: ScrapedProduct): boolean {
+  const weakTitle =
+    !product.title ||
+    /^produit\s*ebay$/i.test(product.title) ||
+    product.title.length < 8;
+  return weakTitle || product.price == null;
+}
+
+function parseEbayProductHtml(html: string, url: string): ScrapedProduct {
+  const jsonLd = extractJsonLd(html);
+  const itemSpecifics = extractAllItemSpecifics(html);
+
+  const title = pickEbayTitle(html, jsonLd);
+  const cleanTitle = decodeHtmlEntities(stripTags(title).trim());
+
+  const priceText = pickEbayPriceText(html, jsonLd);
+  const currency =
+    extractMeta(html, "product:price:currency") ||
+    extractMeta(html, "og:price:currency") ||
+    extractBetween(html, /itemprop="priceCurrency"[^>]*content="([^"]+)"/i) ||
+    (jsonLd?.offers &&
+    !Array.isArray(jsonLd.offers) &&
+    jsonLd.offers.priceCurrency
+      ? String(jsonLd.offers.priceCurrency)
+      : null) ||
+    "EUR";
+
+  const images = [
+    ...extractAll(
+      html,
+      /<meta[^>]*property="og:image"[^>]*content="([^"]+)"/gi,
+    ),
+    ...extractAll(
+      html,
+      /<meta[^>]*content="([^"]+)"[^>]*property="og:image"/gi,
+    ),
+    ...(jsonLd?.image
+      ? Array.isArray(jsonLd.image)
+        ? jsonLd.image.map((img) =>
+            typeof img === "string" ? img : (img?.url ?? ""),
+          )
+        : [String(jsonLd.image)]
+      : []),
+  ].filter(Boolean);
+
+  const description =
+    (jsonLd?.description ? String(jsonLd.description) : null) ??
+    extractMeta(html, "og:description") ??
+    extractBetween(html, /id="desc_div"[^>]*>([\s\S]*?)<\/div>/i);
+
+  const sku =
+    pickSpecific(itemSpecifics, [
+      "MPN",
+      "Numéro de pièce fabricant",
+      "Numero de piece fabricant",
+      "Référence fabricant",
+      "Manufacturer Part Number",
+    ]) ??
+    (jsonLd?.mpn ? String(jsonLd.mpn) : null) ??
+    (jsonLd?.sku ? String(jsonLd.sku) : null) ??
+    null;
+
+  let condition =
+    pickSpecific(itemSpecifics, ["Condition", "État", "Etat", "Zustands"]) ??
+    (jsonLd?.itemCondition ? String(jsonLd.itemCondition) : null) ??
+    null;
+  if (condition && /^(particulier|professionnel)$/i.test(condition)) {
+    condition = null;
+    delete itemSpecifics.État;
+    delete itemSpecifics.Etat;
+    delete itemSpecifics.Condition;
+  }
+
+  if (!pickSpecific(itemSpecifics, ["Type", "Product Type", "Type de produit"])) {
+    const inferred = inferProductTypeFromTitle(cleanTitle);
+    if (inferred) {
+      itemSpecifics.Type = inferred;
+    }
+  } else {
+    // eBay FR : « Affichage: écran LCD » → Écran
+    const currentType =
+      pickSpecific(itemSpecifics, ["Type", "Product Type", "Type de produit"]) ??
+      "";
+    const inferred = inferProductTypeFromTitle(`${currentType} ${cleanTitle}`);
+    if (
+      inferred &&
+      (/affichage\s*:/i.test(currentType) ||
+        /écran\s*lcd|lcd\s*display/i.test(currentType))
+    ) {
+      itemSpecifics.Type = inferred;
+    }
+  }
+
+  normalizeEbayFrSpecifics(itemSpecifics, cleanTitle);
+
+  let brand =
+    pickSpecific(itemSpecifics, ["Brand", "Marque", "Marke", "Marca"]) ??
+    brandFromJsonLd(jsonLd) ??
+    null;
+
+  // « - Sans marque/Générique - » → OEM
+  if (brand && /sans\s*marque|g[eé]n[eé]rique|unbranded/i.test(brand)) {
+    brand = "OEM";
+    itemSpecifics.Brand = "OEM";
+    itemSpecifics.Marque = "OEM";
+  } else if (brand) {
+    itemSpecifics.Brand ??= brand;
+    itemSpecifics.Marque ??= brand;
+  }
+
+  if (
+    !pickSpecific(itemSpecifics, ["Compatible Brand", "Marque compatible"])
+  ) {
+    const fromTitle = inferCompatibleBrandFromTitle(cleanTitle);
+    if (fromTitle) {
+      itemSpecifics["Compatible Brand"] = fromTitle;
+      itemSpecifics["Marque compatible"] = fromTitle;
+    }
+  }
+
+  if (
+    !pickSpecific(itemSpecifics, ["Brand", "Marque"]) &&
+    pickSpecific(itemSpecifics, ["Compatible Brand", "Marque compatible"])
+  ) {
+    itemSpecifics.Brand = "OEM";
+    itemSpecifics.Marque = "OEM";
+    brand = brand ?? "OEM";
+  }
+
+  return {
+    title: cleanTitle || "Produit eBay",
+    description: description
+      ? decodeHtmlEntities(stripTags(description).trim())
+      : null,
+    price: parsePrice(priceText),
+    currency,
+    images: [...new Set(images)],
+    brand,
+    sku,
+    condition,
+    itemSpecifics,
+    sourceUrl: url,
+    raw: {
+      provider: "ebay",
+      itemSpecificKeys: Object.keys(itemSpecifics),
+    },
+  };
+}
+
+function pickEbayTitle(
+  html: string,
+  jsonLd: ReturnType<typeof extractJsonLd>,
+): string {
+  const candidates = [
+    jsonLd?.name ? String(jsonLd.name) : null,
+    extractMeta(html, "og:title"),
+    extractBetween(
+      html,
+      /<h1[^>]*class="[^"]*x-item-title[^"]*"[^>]*>([\s\S]*?)<\/h1>/i,
+    ),
+    extractBetween(
+      html,
+      /class="[^"]*x-item-title-label[^"]*"[^>]*>([\s\S]*?)<\//i,
+    ),
+    extractBetween(
+      html,
+      /data-testid="x-item-title-label"[^>]*>([\s\S]*?)<\//i,
+    ),
+    extractBetween(html, /itemprop="name"[^>]*content="([^"]+)"/i),
+    extractBetween(html, /itemprop="name"[^>]*>([\s\S]*?)<\//i),
+    extractBetween(html, /<title[^>]*>([\s\S]*?)<\/title>/i),
+  ]
+    .map((t) => (t ? decodeHtmlEntities(stripTags(t)).trim() : ""))
+    .map((t) => t.replace(/\s*\|\s*eBay\s*$/i, "").trim())
+    .filter((t) => t.length >= 8 && !/^eBay$/i.test(t));
+
+  return candidates[0] || "Produit eBay";
+}
+
+function pickEbayPriceText(
+  html: string,
+  jsonLd: ReturnType<typeof extractJsonLd>,
+): string | null {
+  const fromJson =
+    jsonLd?.offers &&
+    !Array.isArray(jsonLd.offers) &&
+    jsonLd.offers.price != null
+      ? String(jsonLd.offers.price)
+      : null;
+
+  return (
+    extractMeta(html, "product:price:amount") ||
+    extractMeta(html, "og:price:amount") ||
+    extractBetween(html, /itemprop="price"[^>]*content="([^"]+)"/i) ||
+    extractBetween(
+      html,
+      /class="[^"]*x-price-primary[^"]*"[^>]*>[\s\S]*?([0-9]+[.,][0-9]+)/i,
+    ) ||
+    extractBetween(
+      html,
+      /class="[^"]*x-bin-price__content[^"]*"[^>]*>[\s\S]*?([0-9]+[.,][0-9]+)/i,
+    ) ||
+    extractBetween(
+      html,
+      /(?:EUR|€)\s*([0-9]+[.,][0-9]{2})/i,
+    ) ||
+    extractBetween(
+      html,
+      /([0-9]+[.,][0-9]{2})\s*(?:EUR|€)/i,
+    ) ||
+    fromJson
+  );
 }
 
 function brandFromJsonLd(
@@ -470,13 +571,22 @@ function normKey(value: string): string {
 }
 
 function extractMeta(html: string, property: string): string | null {
-  const match = html.match(
+  const escaped = property.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const patterns = [
     new RegExp(
-      `<meta[^>]*(?:property|name)="${property}"[^>]*content="([^"]*)"`,
+      `<meta[^>]*(?:property|name)=["']${escaped}["'][^>]*content=["']([^"']*)["']`,
       "i",
     ),
-  );
-  return match?.[1] ?? null;
+    new RegExp(
+      `<meta[^>]*content=["']([^"']*)["'][^>]*(?:property|name)=["']${escaped}["']`,
+      "i",
+    ),
+  ];
+  for (const re of patterns) {
+    const match = html.match(re);
+    if (match?.[1]?.trim()) return match[1].trim();
+  }
+  return null;
 }
 
 function extractBetween(html: string, regex: RegExp): string | null {

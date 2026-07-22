@@ -44,12 +44,22 @@ function isAmazonUrl(url: string): boolean {
 
 /**
  * Amazon URLs trop longues / déjà encodées font échouer ScrapingBee (500).
+ * eBay : les liens /itm/ avec tracking (_trkparms, itmmeta…) cassent souvent
+ * le rendu → titre « Produit eBay » / prix vide. On canonise.
  * On garde une URL canonique courte : https://www.amazon.fr/dp/ASIN
  */
 export function normalizeScrapingUrl(rawUrl: string): string {
   const trimmed = rawUrl.trim();
   try {
     const parsed = new URL(trimmed);
+
+    // eBay item → https://www.ebay.fr/itm/123456789012
+    const ebayItem = parsed.pathname.match(/\/itm\/(?:[^/]+\/)?(\d{9,16})/i);
+    if (ebayItem && /ebay\./i.test(parsed.hostname)) {
+      const host = parsed.hostname.toLowerCase().replace(/^(www\.)?/, "www.");
+      return `https://${host}/itm/${ebayItem[1]}`;
+    }
+
     if (!isAmazonUrl(parsed.href)) {
       // Retirer fragments inutiles
       parsed.hash = "";

@@ -26,13 +26,31 @@ export function buildEbayTitle(rawTitle: string, brand?: string | null): string 
   let title = rawTitle
     .replace(AMAZON_TITLE_NOISE, "")
     .replace(MARKETING_NOISE, "")
+    .replace(/\s*\|\s*eBay\s*$/i, "")
     .replace(/\s+/g, " ")
     .trim();
 
-  // Retire un préfixe marque dupliqué type "Amazon Basics Amazon Basics"
-  if (brand) {
-    const brandRe = new RegExp(`^(${escapeRegex(brand)}\\s+)+`, "i");
-    title = title.replace(brandRe, `${brand} `).trim();
+  // Marque générique / bruit : ne pas préfixer ni stripper
+  const usableBrand =
+    brand &&
+    brand.trim().length >= 2 &&
+    brand.trim().length <= 40 &&
+    !/^[-–—]/.test(brand.trim()) &&
+    !/sans\s*marque|g[eé]n[eé]rique|unbranded|n\/?a/i.test(brand)
+      ? brand.trim()
+      : null;
+
+  if (usableBrand) {
+    try {
+      const brandRe = new RegExp(`^(${escapeRegex(usableBrand)}\\s+)+`, "i");
+      title = title.replace(brandRe, `${usableBrand} `).trim();
+    } catch {
+      /* ignore invalid brand regex */
+    }
+  }
+
+  if (!title || /^produit\s*ebay$/i.test(title)) {
+    return "Produit importé eBay";
   }
 
   if (title.length <= EBAY_TITLE_MAX) return title;
