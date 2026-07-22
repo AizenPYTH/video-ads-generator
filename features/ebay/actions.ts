@@ -16,6 +16,7 @@ import {
   ensureSellerDefaults,
   listMerchantLocations,
 } from "@/services/ebay/sandbox-setup";
+import { createMerchantLocation } from "@/services/ebay/locations";
 import { AppError } from "@/lib/errors/app-error";
 
 const OAUTH_STATE_COOKIE = "ebay_oauth_state";
@@ -212,6 +213,44 @@ export async function getEbaySetupOptions(): Promise<
       error: err instanceof Error ? err.message : "Erreur inconnue.",
       data: { fulfillment: [], payment: [], returns: [], locations: [] },
     };
+  }
+}
+
+export async function createEbayInventoryLocation(input: {
+  name: string;
+  addressLine1: string;
+  city: string;
+  postalCode: string;
+  country?: string;
+}): Promise<EbayActionResult<{ key: string; name: string }>> {
+  try {
+    const userId = await requireUserId();
+    const accessToken = await getActiveEbayAccessToken(userId);
+    const client = new EbayClient({ accessToken });
+
+    const created = await createMerchantLocation(client, input);
+
+    const supabase = await createClient();
+    await supabase.from("user_settings").upsert(
+      {
+        user_id: userId,
+        lieu_expedition_par_defaut: created.key,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id" },
+    );
+
+    revalidatePath("/dashboard/ebay");
+
+    return {
+      success: true,
+      data: { key: created.key, name: created.name },
+    };
+  } catch (err) {
+    if (err instanceof AppError) {
+      return { error: err.message };
+    }
+    return { error: err instanceof Error ? err.message : "Erreur inconnue." };
   }
 }
 

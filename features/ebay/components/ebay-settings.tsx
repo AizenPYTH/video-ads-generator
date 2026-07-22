@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { Loader2, Save } from "lucide-react";
+import { Loader2, MapPin, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Card,
@@ -14,6 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
+  createEbayInventoryLocation,
   getEbaySetupOptions,
   saveEbaySettings,
   type EbaySetupOptions,
@@ -33,6 +35,8 @@ export function EbaySettings({
   hasConnectedAccount = false,
 }: EbaySettingsProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const [isCreatingLocation, setIsCreatingLocation] = useState(false);
+  const [optionsError, setOptionsError] = useState<string | null>(null);
   const [options, setOptions] = useState<EbaySetupOptions>({
     fulfillment: [],
     payment: [],
@@ -40,7 +44,7 @@ export function EbaySettings({
     locations: [],
   });
 
-  const { register, handleSubmit, watch } = useForm({
+  const { register, handleSubmit, watch, setValue } = useForm({
     defaultValues: {
       marche_ebay: settings?.marche_ebay ?? "EBAY_FR",
       politique_expedition_par_defaut:
@@ -52,6 +56,16 @@ export function EbaySettings({
     },
   });
 
+  const locationForm = useForm({
+    defaultValues: {
+      name: "Entrepôt principal",
+      addressLine1: "",
+      city: "",
+      postalCode: "",
+      country: "FR",
+    },
+  });
+
   const selected = {
     fulfillment: watch("politique_expedition_par_defaut"),
     payment: watch("politique_paiement_par_defaut"),
@@ -59,17 +73,28 @@ export function EbaySettings({
     location: watch("lieu_expedition_par_defaut"),
   };
 
+  async function refreshOptions() {
+    const result = await getEbaySetupOptions();
+    if (result.error) {
+      setOptionsError(result.error);
+    } else {
+      setOptionsError(null);
+    }
+    if (result.data) setOptions(result.data);
+    return result.data;
+  }
+
   useEffect(() => {
     if (!hasConnectedAccount) return;
     let cancelled = false;
     void (async () => {
-      const result = await getEbaySetupOptions();
-      if (cancelled) return;
-      if (result.data) setOptions(result.data);
+      const data = await refreshOptions();
+      if (cancelled || !data) return;
     })();
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasConnectedAccount]);
 
   function withSelectedOption(
@@ -123,6 +148,29 @@ export function EbaySettings({
     }
   }
 
+  async function onCreateLocation(data: {
+    name: string;
+    addressLine1: string;
+    city: string;
+    postalCode: string;
+    country: string;
+  }) {
+    setIsCreatingLocation(true);
+    try {
+      const result = await createEbayInventoryLocation(data);
+      if (result.error || !result.data) {
+        toast.error(result.error ?? "Impossible de créer le lieu.");
+        return;
+      }
+
+      toast.success(`Lieu « ${result.data.name} » créé sur eBay.`);
+      setValue("lieu_expedition_par_defaut", result.data.key);
+      await refreshOptions();
+    } finally {
+      setIsCreatingLocation(false);
+    }
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -133,7 +181,13 @@ export function EbaySettings({
           d’expédition utilisés pour la publication.
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-8">
+        {optionsError ? (
+          <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            Impossible de charger les options eBay : {optionsError}
+          </p>
+        ) : null}
+
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <fieldset disabled={isLoading} className="space-y-4">
             <div className="space-y-2">
@@ -199,7 +253,7 @@ export function EbaySettings({
             </div>
             <div className="space-y-2">
               <Label htmlFor="lieu_expedition_par_defaut">
-                Lieu d&apos;inventaire
+                Lieu d&apos;expédition
               </Label>
               <select
                 id="lieu_expedition_par_defaut"
@@ -213,17 +267,105 @@ export function EbaySettings({
                   </option>
                 ))}
               </select>
+              {locationOptions.length === 0 ? (
+                <p className="text-sm text-[var(--ss-text-muted)]">
+                  Aucun lieu sur ce compte eBay. Créez-en un ci-dessous (adresse
+                  réelle d’expédition).
+                </p>
+              ) : null}
             </div>
           </fieldset>
           <Button type="submit" disabled={isLoading}>
             {isLoading ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+              <Loader2
+                className="mr-2 h-4 w-4 animate-spin"
+                aria-hidden="true"
+              />
             ) : (
               <Save className="mr-2 h-4 w-4" aria-hidden="true" />
             )}
             {isLoading ? "Enregistrement…" : "Enregistrer les préférences"}
           </Button>
         </form>
+
+        <div className="space-y-4 border-t border-border/60 pt-6">
+          <div className="flex items-start gap-2">
+            <MapPin className="mt-0.5 h-4 w-4 text-[var(--ss-navy-700)]" />
+            <div>
+              <h3 className="text-sm font-semibold">
+                Créer un lieu d&apos;expédition
+              </h3>
+              <p className="text-sm text-[var(--ss-text-muted)]">
+                Obligatoire pour publier. L’adresse doit correspondre à votre
+                entrepôt / point d’envoi réel.
+              </p>
+            </div>
+          </div>
+
+          <form
+            onSubmit={locationForm.handleSubmit(onCreateLocation)}
+            className="grid gap-3 sm:grid-cols-2"
+          >
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="loc_name">Nom du lieu</Label>
+              <Input
+                id="loc_name"
+                placeholder="Entrepôt principal"
+                {...locationForm.register("name", { required: true })}
+              />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="loc_address">Adresse</Label>
+              <Input
+                id="loc_address"
+                placeholder="12 rue Example"
+                {...locationForm.register("addressLine1", { required: true })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="loc_city">Ville</Label>
+              <Input
+                id="loc_city"
+                placeholder="Paris"
+                {...locationForm.register("city", { required: true })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="loc_postal">Code postal</Label>
+              <Input
+                id="loc_postal"
+                placeholder="75001"
+                {...locationForm.register("postalCode", { required: true })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="loc_country">Pays</Label>
+              <Input
+                id="loc_country"
+                placeholder="FR"
+                {...locationForm.register("country", { required: true })}
+              />
+            </div>
+            <div className="flex items-end">
+              <Button
+                type="submit"
+                variant="secondary"
+                disabled={isCreatingLocation}
+                className="w-full"
+              >
+                {isCreatingLocation ? (
+                  <Loader2
+                    className="mr-2 h-4 w-4 animate-spin"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <MapPin className="mr-2 h-4 w-4" aria-hidden="true" />
+                )}
+                {isCreatingLocation ? "Création…" : "Créer le lieu sur eBay"}
+              </Button>
+            </div>
+          </form>
+        </div>
       </CardContent>
     </Card>
   );
