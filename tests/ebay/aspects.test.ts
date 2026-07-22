@@ -84,6 +84,58 @@ describe("ebay aspects mapping", () => {
     expect(raw["Marque compatible"]).toBe("Apple");
   });
 
+  it("normalizes eBay FR Pour Apple into OEM + Apple compatible", () => {
+    const raw = collectRawAspectValues({
+      itemSpecifics: {
+        Marque: "Pour Apple",
+        "Marque compatible": "Pour Apple",
+        Type: "écran LCD",
+        "Modèle compatible": "Pour Apple iPhone 11",
+      },
+      title: "Ecran LCD Iphone 11",
+      brand: "Pour Apple",
+    });
+
+    expect(raw.Marque).toBe("OEM");
+    expect(raw["Marque compatible"]).toBe("Apple");
+    expect(raw["Appareil compatible"]).toMatch(/iPhone 11/i);
+
+    const { aspects, missingRequired } = buildEbayAspects({
+      raw,
+      categoryAspects: [
+        {
+          name: "Marque",
+          required: true,
+          mode: "SELECTION_ONLY",
+          values: ["OEM", "Apple", "Samsung", "Sans marque"],
+        },
+        {
+          name: "Marque compatible",
+          required: true,
+          mode: "SELECTION_ONLY",
+          values: ["Apple", "Samsung", "Xiaomi"],
+        },
+        {
+          name: "Type",
+          required: true,
+          mode: "SELECTION_ONLY",
+          values: ["Écran", "Batterie", "LCD"],
+        },
+        {
+          name: "Appareil compatible",
+          required: true,
+          mode: "FREE_TEXT",
+          values: [],
+        },
+      ],
+    });
+
+    expect(aspects.Marque).toEqual(["OEM"]);
+    expect(aspects["Marque compatible"]).toEqual(["Apple"]);
+    expect(aspects.Type).toEqual(["Écran"]);
+    expect(missingRequired).toEqual([]);
+  });
+
   it("reports missing required aspects instead of publishing empty", () => {
     const { missingRequired } = buildEbayAspects({
       raw: { Brand: "Apple" },
@@ -96,6 +148,7 @@ describe("ebay aspects mapping", () => {
         },
       ],
     });
+    // Brand Apple seul ne remplit plus Marque compatible (pas de confusion)
     expect(missingRequired).toContain("Marque compatible");
   });
 });

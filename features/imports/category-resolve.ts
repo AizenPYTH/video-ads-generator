@@ -715,9 +715,36 @@ function hasAspect(input: CategoryResolveInput, aspectName: string): boolean {
   );
   if (specifics?.[1]?.trim()) return true;
 
+  // Alias famille (sans confondre Marque ↔ Marque compatible)
+  if (
+    (key === "marque" || key === "brand") &&
+    input.brand?.trim()
+  ) {
+    return true;
+  }
+  if (
+    key.includes("marque compatible") ||
+    key.includes("compatible brand")
+  ) {
+    return Boolean(
+      input.item_specifics?.["Compatible Brand"]?.trim() ||
+        input.item_specifics?.["Marque compatible"]?.trim(),
+    );
+  }
+  if (
+    (key.includes("appareil compatible") ||
+      key.includes("compatible device") ||
+      key.includes("modèle compatible") ||
+      key.includes("modele compatible")) &&
+    (input.item_specifics?.["Compatible Device"]?.trim() ||
+      input.item_specifics?.["Appareil compatible"]?.trim() ||
+      input.item_specifics?.["Modèle compatible"]?.trim() ||
+      input.compatible_device?.trim())
+  ) {
+    return true;
+  }
+
   const aliases: Record<string, string | null | undefined> = {
-    brand: input.brand,
-    marque: input.brand,
     mpn: input.mpn,
     model: input.model,
     modèle: input.model,
@@ -734,25 +761,20 @@ function hasAspect(input: CategoryResolveInput, aspectName: string): boolean {
   };
 
   for (const [alias, value] of Object.entries(aliases)) {
-    if ((key === alias || key.includes(alias)) && value?.trim()) return true;
+    if (!value?.trim()) continue;
+    if (key === alias) return true;
+    // Éviter que « model » matche « modèle compatible » via includes trop large
+    if (
+      !key.includes("compatible") &&
+      (key === alias || key.includes(alias))
+    ) {
+      return true;
+    }
   }
 
-  // Correspondances FR/EN fréquentes
-  if (
-    (key.includes("marque") || key === "brand") &&
-    input.brand?.trim()
-  ) {
-    return true;
-  }
   if (
     (key.includes("couleur") || key.includes("color")) &&
     input.color?.trim()
-  ) {
-    return true;
-  }
-  if (
-    (key.includes("modèle") || key.includes("modele") || key.includes("model")) &&
-    input.model?.trim()
   ) {
     return true;
   }

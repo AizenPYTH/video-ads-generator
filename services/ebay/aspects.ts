@@ -4,6 +4,7 @@
  * Mappe les clés EN du fichier d’import vers les noms localisés Taxonomy (ex. Marque compatible).
  */
 import type { CategoryAspect } from "@/services/ebay/taxonomy";
+import { inferProductTypeFromTitle } from "@/lib/scraping/infer-product-type";
 
 export type AspectSourceInput = {
   itemSpecifics?: Record<string, string | string[] | null | undefined> | null;
@@ -24,7 +25,14 @@ export type AspectSourceInput = {
 /** Alias EN/FR/variantes → famille d’aspect */
 const ASPECT_FAMILIES: Record<string, string[]> = {
   brand: ["brand", "marque", "marke", "marca"],
-  mpn: ["mpn", "manufacturer part number", "référence fabricant", "ref fabricant"],
+  mpn: [
+    "mpn",
+    "manufacturer part number",
+    "référence fabricant",
+    "ref fabricant",
+    "numero de piece fabricant",
+    "numéro de pièce fabricant",
+  ],
   model: ["model", "modèle", "modele"],
   type: ["type", "product type", "type de produit", "sold item name"],
   color: ["color", "colour", "couleur", "farbe"],
@@ -53,6 +61,30 @@ const ASPECT_FAMILIES: Record<string, string[]> = {
   ],
 };
 
+const KNOWN_COMPAT_BRANDS = [
+  "Apple",
+  "Samsung",
+  "Xiaomi",
+  "Huawei",
+  "Honor",
+  "Oppo",
+  "OnePlus",
+  "Google",
+  "Sony",
+  "Motorola",
+  "Nokia",
+  "Realme",
+  "Vivo",
+  "Asus",
+  "Lenovo",
+  "Dell",
+  "HP",
+  "Microsoft",
+] as const;
+
+const JUNK_ASPECT_VALUES =
+  /^(particulier|professionnel|voir (la )?description|see (the )?description|non applicable|n\/?a|-|—)$/i;
+
 function normKey(value: string): string {
   return value
     .normalize("NFD")
@@ -75,8 +107,40 @@ function asSingleValue(
   return text || null;
 }
 
+/** eBay FR affiche souvent « Pour Apple » / « Pour Samsung Galaxy… » */
+function stripPourPrefix(value: string): string {
+  return value
+    .replace(/^(pour|for|compatible\s+(avec|with))\s+/i, "")
+    .trim();
+}
+
+function detectBrandInText(text: string | null | undefined): string | null {
+  if (!text?.trim()) return null;
+  const hay = text.toLowerCase();
+  for (const brand of KNOWN_COMPAT_BRANDS) {
+    if (new RegExp(`\\b${brand}\\b`, "i").test(hay)) return brand;
+  }
+  if (/\b(iphone|ipad|macbook|airpods|imac)\b/i.test(hay)) return "Apple";
+  if (/\b(galaxy|redmi|poco)\b/i.test(hay)) {
+    if (/\bredmi|poco\b/i.test(hay)) return "Xiaomi";
+    return "Samsung";
+  }
+  return null;
+}
+
+function looksLikeCompatPhrase(value: string): boolean {
+  return /^(pour|for|compatible)\b/i.test(value.trim());
+}
+
 function familyForKey(key: string): string | null {
   const n = normKey(key);
+  // « Marque compatible » ne doit PAS tomber dans la famille brand
+  if (n.includes("compatible") && n.includes("marque")) {
+    return "compatible brand";
+  }
+  if (n.includes("compatible") && (n.includes("brand") || n.includes("marca"))) {
+    return "compatible brand";
+  }
   for (const [family, aliases] of Object.entries(ASPECT_FAMILIES)) {
     if (aliases.some((a) => normKey(a) === n)) return family;
   }
@@ -96,6 +160,7 @@ export function collectRawAspectValues(
   const put = (key: string, value: string | string[] | null | undefined) => {
     const v = asSingleValue(value);
     if (!v || !key.trim()) return;
+    if (JUNK_ASPECT_VALUES.test(v)) return;
     out[key.trim()] = v;
   };
 
@@ -123,19 +188,95 @@ export function collectRawAspectValues(
   put("Compatible Model Number", input.compatibleModel);
   put("Numéro de modèle compatible", input.compatibleModel);
 
-  // Inférence légère pièces Apple si CSV partiel
-  const title = (input.title ?? "").toLowerCase();
-  const hasAppleHint =
-    /\b(macbook|iphone|ipad|apple|a\d{4})\b/i.test(title) ||
-    /\bapple\b/i.test(out.Brand ?? "") ||
-    /\bapple\b/i.test(out["Compatible Brand"] ?? "");
-
-  if (hasAppleHint && !out["Compatible Brand"] && !out["Marque compatible"]) {
-    put("Compatible Brand", "Apple");
-    put("Marque compatible", "Apple");
-  }
+  enrichAspectsFromTitleAndCompat(out, input.title);
 
   return out;
+}
+
+/**
+ * Normalise les valeurs eBay FR (« Pour Apple ») et complète Brand / Type / Compatible.
+ */
+function enrichAspectsFromTitleAndCompat(
+  out: Record<string, string>,
+  title: string | null | undefined,
+): void {
+  const titleText = title ?? "";
+
+  // Brand du type « Pour Apple » → plutôt Marque compatible
+  for (const key of ["Brand", "Marque"]) {
+    const val = out[key];
+    if (!val) continue;
+    if (looksLikeCompatPhrase(val) || detectBrandInText(val)) {
+      const compat = detectBrandInText(val) ?? stripPourPrefix(val);
+      if (compat && !out["Compatible Brand"] && !out["Marque compatible"]) {
+        out["Compatible Brand"] = compat;
+        out["Marque compatible"] = compat;
+      }
+      if (looksLikeCompatPhrase(val)) {
+        out.Brand = "OEM";
+        out.Marque = "OEM";
+      }
+    }
+  }
+
+  // « Pour Apple » sur Marque compatible → Apple
+  for (const key of ["Compatible Brand", "Marque compatible"]) {
+    const val = out[key];
+    if (!val) continue;
+    const detected = detectBrandInText(val) ?? stripPourPrefix(val);
+    if (detected) {
+      out["Compatible Brand"] = detected;
+      out["Marque compatible"] = detected;
+    }
+  }
+
+  // Appareil : « Pour Apple iPhone 11 » → iPhone 11
+  for (const key of [
+    "Compatible Device",
+    "Appareil compatible",
+    "Modèle compatible",
+    "Compatible Model",
+  ]) {
+    const val = out[key];
+    if (!val) continue;
+    const cleaned = stripPourPrefix(val)
+      .replace(/^(Apple|Samsung|Xiaomi|Huawei)\s+/i, "")
+      .trim();
+    if (cleaned && cleaned !== val) {
+      out["Appareil compatible"] = cleaned;
+      out["Compatible Device"] = cleaned;
+    }
+  }
+
+  const inferredCompat =
+    detectBrandInText(out["Compatible Brand"]) ||
+    detectBrandInText(out["Marque compatible"]) ||
+    detectBrandInText(titleText) ||
+    detectBrandInText(out["Modèle compatible"]) ||
+    detectBrandInText(out["Appareil compatible"]);
+
+  if (inferredCompat) {
+    if (!out["Compatible Brand"] && !out["Marque compatible"]) {
+      out["Compatible Brand"] = inferredCompat;
+      out["Marque compatible"] = inferredCompat;
+    } else {
+      const current = out["Marque compatible"] || out["Compatible Brand"] || "";
+      if (looksLikeCompatPhrase(current) || /pour\s+/i.test(current)) {
+        out["Compatible Brand"] = inferredCompat;
+        out["Marque compatible"] = inferredCompat;
+      }
+    }
+  }
+
+  if (!out.Brand && !out.Marque) {
+    out.Brand = "OEM";
+    out.Marque = "OEM";
+  }
+
+  if (!out.Type) {
+    const inferredType = inferProductTypeFromTitle(titleText);
+    if (inferredType) out.Type = inferredType;
+  }
 }
 
 function pickValueForAspect(
@@ -143,19 +284,17 @@ function pickValueForAspect(
   raw: Record<string, string>,
 ): string | null {
   const aspectNorm = normKey(aspectName);
+  const aspectFamily = familyForAspectName(aspectName);
 
-  // 1) Match exact / insensible à la casse
   for (const [k, v] of Object.entries(raw)) {
     if (normKey(k) === aspectNorm) return v;
   }
 
-  // 2) Même famille d’alias
-  const family = familyForAspectName(aspectName);
-  if (family) {
-    const aliases = ASPECT_FAMILIES[family] ?? [];
+  if (aspectFamily) {
+    const aliases = ASPECT_FAMILIES[aspectFamily] ?? [];
     for (const [k, v] of Object.entries(raw)) {
       const keyFamily = familyForKey(k);
-      if (keyFamily === family) return v;
+      if (keyFamily === aspectFamily) return v;
       if (aliases.some((a) => normKey(a) === normKey(k))) return v;
     }
   }
@@ -163,24 +302,44 @@ function pickValueForAspect(
   return null;
 }
 
-function preferAllowedValue(
-  value: string,
-  aspect: CategoryAspect,
-): string {
+function preferAllowedValue(value: string, aspect: CategoryAspect): string {
   if (!aspect.values.length) return value;
-  const exact = aspect.values.find((v) => v === value);
-  if (exact) return exact;
-  const ci = aspect.values.find(
-    (v) => normKey(v) === normKey(value),
-  );
-  if (ci) return ci;
-  // FREE_TEXT : garder la valeur ; SELECTION_ONLY : tenter inclusion
-  if (aspect.mode === "SELECTION_ONLY") {
-    const partial = aspect.values.find((v) =>
-      normKey(v).includes(normKey(value)),
-    );
-    if (partial) return partial;
+
+  const candidates = [
+    value,
+    stripPourPrefix(value),
+    detectBrandInText(value) ?? "",
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    const exact = aspect.values.find((v) => v === candidate);
+    if (exact) return exact;
+    const ci = aspect.values.find((v) => normKey(v) === normKey(candidate));
+    if (ci) return ci;
   }
+
+  for (const candidate of candidates) {
+    const cn = normKey(candidate);
+    const contained = aspect.values.find((v) => cn.includes(normKey(v)));
+    if (contained) return contained;
+    const container = aspect.values.find((v) => normKey(v).includes(cn));
+    if (container) return container;
+  }
+
+  if (familyForAspectName(aspect.name) === "type") {
+    const inferred = inferProductTypeFromTitle(value);
+    if (inferred) {
+      const match = aspect.values.find(
+        (v) =>
+          normKey(v) === normKey(inferred) ||
+          normKey(v).includes(normKey(inferred)) ||
+          normKey(inferred).includes(normKey(v)),
+      );
+      if (match) return match;
+      if (aspect.mode !== "SELECTION_ONLY") return inferred;
+    }
+  }
+
   return value;
 }
 
@@ -205,6 +364,16 @@ export function buildEbayAspects(input: {
     const value = pickValueForAspect(aspect.name, input.raw);
     if (!value) continue;
     const finalValue = preferAllowedValue(value, aspect);
+
+    // SELECTION_ONLY : ne pas envoyer une valeur hors liste
+    if (
+      aspect.mode === "SELECTION_ONLY" &&
+      aspect.values.length > 0 &&
+      !aspect.values.some((v) => normKey(v) === normKey(finalValue))
+    ) {
+      continue;
+    }
+
     aspects[aspect.name] = [finalValue];
 
     const sourceKey =
@@ -223,7 +392,6 @@ export function buildEbayAspects(input: {
     usedRawKeys.add(sourceKey);
   }
 
-  // Aspects Taxonomy absents (mock / hors ligne) : privilégier les clés FR
   if (input.categoryAspects.length === 0) {
     const fallbackOrder = [
       "Marque compatible",
@@ -250,15 +418,13 @@ export function buildEbayAspects(input: {
     for (const [k, v] of Object.entries(input.raw)) {
       const family = familyForKey(k) ?? normKey(k);
       const existing = byFamily.get(family);
-      const preferFr = /[éèêàâùûôç]|marque|appareil|modèle|couleur|matière|fabricant/i.test(
-        k,
-      );
+      const preferFr =
+        /[éèêàâùûôç]|marque|appareil|modèle|couleur|matière|fabricant/i.test(k);
       if (!existing || preferFr) {
         byFamily.set(family, { key: k, value: v });
       }
     }
 
-    // Réécrire avec noms FR quand on connaît la famille
     const frNames: Record<string, string> = {
       brand: "Marque",
       mpn: "MPN",
@@ -280,7 +446,6 @@ export function buildEbayAspects(input: {
       }
     }
 
-    // Garantir l’ordre des clés importantes
     for (const name of fallbackOrder) {
       if (aspects[name]) continue;
       const value = pickValueForAspect(name, input.raw);
@@ -367,6 +532,7 @@ export function extractAspectSourcesFromAd(ad: {
       (meta.compatible_device as string) ||
       (mergedSpecifics["Compatible Device"] as string) ||
       (mergedSpecifics["Appareil compatible"] as string) ||
+      (mergedSpecifics["Modèle compatible"] as string) ||
       null,
     compatibleModel:
       (meta.compatible_model as string) ||

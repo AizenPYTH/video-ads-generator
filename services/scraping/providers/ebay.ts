@@ -31,7 +31,7 @@ export class EbayProductProvider implements ProductPageProvider {
       renderJs: true,
       premiumProxy: true,
       countryCode: "fr",
-      waitMs: 2500,
+      waitMs: 4000,
       blockResources: false,
     });
 
@@ -92,11 +92,6 @@ export class EbayProductProvider implements ProductPageProvider {
       extractMeta(html, "og:description") ??
       extractBetween(html, /id="desc_div"[^>]*>([\s\S]*?)<\/div>/i);
 
-    const brand =
-      pickSpecific(itemSpecifics, ["Brand", "Marque", "Marke", "Marca"]) ??
-      brandFromJsonLd(jsonLd) ??
-      null;
-
     const sku =
       pickSpecific(itemSpecifics, [
         "MPN",
@@ -109,10 +104,16 @@ export class EbayProductProvider implements ProductPageProvider {
       (jsonLd?.sku ? String(jsonLd.sku) : null) ??
       null;
 
-    const condition =
+    let condition =
       pickSpecific(itemSpecifics, ["Condition", "État", "Etat", "Zustands"]) ??
       (jsonLd?.itemCondition ? String(jsonLd.itemCondition) : null) ??
       null;
+    if (condition && /^(particulier|professionnel)$/i.test(condition)) {
+      condition = null;
+      delete itemSpecifics.État;
+      delete itemSpecifics.Etat;
+      delete itemSpecifics.Condition;
+    }
 
     // Type : page eBay d’abord, sinon inférence titre (ex. « Écran iPhone 11 »)
     if (!pickSpecific(itemSpecifics, ["Type", "Product Type", "Type de produit"])) {
@@ -122,24 +123,36 @@ export class EbayProductProvider implements ProductPageProvider {
       }
     }
 
+    // Normaliser « Pour Apple » (eBay FR) → Compatible Brand + Marque OEM
+    normalizeEbayFrSpecifics(itemSpecifics, cleanTitle);
+
+    const brand =
+      pickSpecific(itemSpecifics, ["Brand", "Marque", "Marke", "Marca"]) ??
+      brandFromJsonLd(jsonLd) ??
+      null;
+
     if (brand) {
       itemSpecifics.Brand ??= brand;
       itemSpecifics.Marque ??= brand;
     }
 
-    // Pièces Apple : Marque compatible souvent requise
-    const hasApple =
-      /\b(iphone|ipad|macbook|airpods|apple|watch)\b/i.test(cleanTitle) ||
-      /\bapple\b/i.test(brand ?? "");
+    // Pièces : Marque compatible depuis titre si absente
     if (
-      hasApple &&
-      !pickSpecific(itemSpecifics, [
-        "Compatible Brand",
-        "Marque compatible",
-      ])
+      !pickSpecific(itemSpecifics, ["Compatible Brand", "Marque compatible"])
     ) {
-      itemSpecifics["Compatible Brand"] = "Apple";
-      itemSpecifics["Marque compatible"] = "Apple";
+      const fromTitle = inferCompatibleBrandFromTitle(cleanTitle);
+      if (fromTitle) {
+        itemSpecifics["Compatible Brand"] = fromTitle;
+        itemSpecifics["Marque compatible"] = fromTitle;
+      }
+    }
+
+    if (
+      !pickSpecific(itemSpecifics, ["Brand", "Marque"]) &&
+      pickSpecific(itemSpecifics, ["Compatible Brand", "Marque compatible"])
+    ) {
+      itemSpecifics.Brand = "OEM";
+      itemSpecifics.Marque = "OEM";
     }
 
     return {
@@ -170,6 +183,71 @@ function brandFromJsonLd(
   if (typeof jsonLd.brand === "string") return jsonLd.brand;
   if (typeof jsonLd.brand.name === "string") return jsonLd.brand.name;
   return null;
+}
+
+function inferCompatibleBrandFromTitle(title: string): string | null {
+  if (/\b(iphone|ipad|macbook|airpods|imac|apple\s*watch|\bapple\b)\b/i.test(title)) {
+    return "Apple";
+  }
+  if (/\b(redmi|poco|xiaomi)\b/i.test(title)) return "Xiaomi";
+  if (/\b(galaxy|samsung)\b/i.test(title)) return "Samsung";
+  if (/\bhuawei\b/i.test(title)) return "Huawei";
+  if (/\bhonor\b/i.test(title)) return "Honor";
+  if (/\boppo\b/i.test(title)) return "Oppo";
+  if (/\boneplus\b/i.test(title)) return "OnePlus";
+  if (/\b(pixel|google)\b/i.test(title)) return "Google";
+  if (/\bmotorola|moto\b/i.test(title)) return "Motorola";
+  return null;
+}
+
+function normalizeEbayFrSpecifics(
+  specifics: Record<string, string>,
+  title: string,
+): void {
+  const stripPour = (v: string) =>
+    v.replace(/^(pour|for|compatible\s+(avec|with))\s+/i, "").trim();
+
+  for (const key of ["Brand", "Marque"]) {
+    const val = specifics[key];
+    if (!val) continue;
+    if (/^(pour|for)\b/i.test(val)) {
+      const compat =
+        inferCompatibleBrandFromTitle(val) ||
+        inferCompatibleBrandFromTitle(title) ||
+        stripPour(val);
+      if (compat) {
+        specifics["Compatible Brand"] ??= compat;
+        specifics["Marque compatible"] ??= compat;
+      }
+      specifics.Brand = "OEM";
+      specifics.Marque = "OEM";
+    }
+  }
+
+  for (const key of ["Compatible Brand", "Marque compatible"]) {
+    const val = specifics[key];
+    if (!val) continue;
+    const cleaned =
+      inferCompatibleBrandFromTitle(val) ||
+      inferCompatibleBrandFromTitle(stripPour(val)) ||
+      stripPour(val);
+    if (cleaned) {
+      specifics["Compatible Brand"] = cleaned;
+      specifics["Marque compatible"] = cleaned;
+    }
+  }
+
+  for (const key of ["Modèle compatible", "Compatible Device", "Appareil compatible"]) {
+    const val = specifics[key];
+    if (!val) continue;
+    const cleaned = stripPour(val)
+      .replace(/^(Apple|Samsung|Xiaomi|Huawei)\s+/i, "")
+      .trim();
+    if (cleaned) {
+      specifics["Appareil compatible"] = cleaned;
+      specifics["Compatible Device"] = cleaned;
+    }
+  }
 }
 
 function pickSpecific(
