@@ -84,7 +84,7 @@ export async function discoverCatalogProductUrls(
 
   const isEbay = /ebay\./i.test(validated.hostname);
   const isMagentoCatalog =
-    /\/catalog\/category\//i.test(validated.pathname) ||
+    /\/catalog\/category\//i.test(validated.href) ||
     /utopya\.fr$/i.test(validated.hostname);
 
   const { html } = await fetchWithScrapingBee({
