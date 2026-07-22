@@ -226,4 +226,79 @@ describe("POST /api/ebay/account-deletion", () => {
     expect(res.status).toBe(204);
     expect(processAccountDeletion).not.toHaveBeenCalled();
   });
+
+  it("returns 204 for test notification with no matching account (not 412)", async () => {
+    const processAccountDeletion = vi.fn(async () => ({
+      status: "not_found" as const,
+      summary: { matched: 0 },
+    }));
+    vi.doMock("@/services/ebay/account-deletion-purge", () => ({
+      processAccountDeletion,
+    }));
+    vi.doMock("@/lib/supabase/admin", () => ({
+      createAdminClient: () => ({
+        from: () => ({
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({ data: null, error: null }),
+            }),
+          }),
+          upsert: () => ({
+            select: () => ({
+              single: async () => ({ data: { id: "log-nf" }, error: null }),
+            }),
+          }),
+          update: () => ({
+            eq: async () => ({ error: null }),
+          }),
+        }),
+      }),
+    }));
+    vi.resetModules();
+
+    const { POST } = await import("@/app/api/ebay/account-deletion/route");
+    const body = JSON.stringify({
+      metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" },
+      notification: {
+        notificationId: "ebay-test-notif",
+        data: { userId: "test-user-no-match", username: "test_user" },
+      },
+    });
+    const req = new NextRequest(
+      "https://snowolf-lime.vercel.app/api/ebay/account-deletion",
+      {
+        method: "POST",
+        body,
+        headers: {
+          "content-type": "application/json",
+          "x-ebay-signature": "ignored-when-skip",
+        },
+      },
+    );
+    const res = await POST(req);
+    expect(res.status).toBe(204);
+    expect(processAccountDeletion).toHaveBeenCalled();
+  });
+
+  it("returns 412 when signature header is absent (skip disabled)", async () => {
+    process.env.EBAY_DELETION_SKIP_SIGNATURE = "false";
+    process.env.EBAY_ENVIRONMENT = "production";
+    vi.resetModules();
+
+    const { POST } = await import("@/app/api/ebay/account-deletion/route");
+    const body = JSON.stringify({
+      metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" },
+      notification: { notificationId: "n", data: {} },
+    });
+    const req = new NextRequest(
+      "https://snowolf-lime.vercel.app/api/ebay/account-deletion",
+      {
+        method: "POST",
+        body,
+        headers: { "content-type": "application/json" },
+      },
+    );
+    const res = await POST(req);
+    expect(res.status).toBe(412);
+  });
 });

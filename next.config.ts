@@ -5,6 +5,11 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: process.cwd(),
   },
+  // Official eBay Event Notification SDK is CommonJS — keep it external on the server.
+  serverExternalPackages: [
+    "event-notification-nodejs-sdk",
+    "ebay-oauth-nodejs-client",
+  ],
   images: {
     remotePatterns: [
       {

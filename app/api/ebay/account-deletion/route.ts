@@ -5,7 +5,8 @@ import {
   getDeletionEndpointUrl,
   getDeletionVerificationToken,
   hashSensitive,
-  verifyEbayNotificationSignature,
+  logSignatureDiagnostics,
+  verifyEbayNotificationSignatureDetailed,
 } from "@/services/ebay/account-deletion";
 import { processAccountDeletion } from "@/services/ebay/account-deletion-purge";
 
@@ -71,18 +72,24 @@ export async function GET(request: NextRequest) {
  * POST — MARKETPLACE_ACCOUNT_DELETION notification
  */
 export async function POST(request: NextRequest) {
+  // Exact bytes from eBay — read once, never re-serialize before verify.
   const rawBody = await request.text();
-  const signatureHeader =
-    request.headers.get("x-ebay-signature") ??
-    request.headers.get("X-EBAY-SIGNATURE");
+  const signatureHeader = request.headers.get("x-ebay-signature");
+  const contentType = request.headers.get("content-type");
 
-  const verified = await verifyEbayNotificationSignature(
+  const verifyResult = await verifyEbayNotificationSignatureDetailed(
     rawBody,
     signatureHeader,
+    contentType,
   );
-  if (!verified) {
-    console.warn("[ebay-deletion] invalid signature — rejecting");
-    return new NextResponse(null, { status: 412 });
+  logSignatureDiagnostics(verifyResult.diagnostics);
+
+  if (!verifyResult.valid) {
+    console.warn("[ebay-deletion] rejecting notification", {
+      reason: verifyResult.diagnostics.reason,
+      status: verifyResult.failureStatus,
+    });
+    return new NextResponse(null, { status: verifyResult.failureStatus });
   }
 
   let payload: DeletionPayload;
@@ -171,7 +178,6 @@ export async function POST(request: NextRequest) {
       notificationId,
       code: insertError.code,
     });
-    // Still attempt purge — compliance first
   }
 
   if (logRow?.id) {
@@ -190,15 +196,22 @@ export async function POST(request: NextRequest) {
     eiasToken: data.eiasToken,
   });
 
+  // Test notifications often have no matching Smart Seller account — still 204.
+  const statusForLog =
+    result.status === "not_found" ? "not_found" : result.status;
+
   if (logRow?.id) {
     await admin
       .from("ebay_account_deletion_notifications")
       .update({
-        status: result.status,
+        status: statusForLog,
         processed_at: new Date().toISOString(),
         internal_account_id: result.internalAccountId ?? null,
         smart_seller_user_id: result.smartSellerUserId ?? null,
-        processing_summary: result.summary,
+        processing_summary: {
+          ...result.summary,
+          no_matching_account: result.status === "not_found",
+        },
         error_message: result.error ?? null,
         updated_at: new Date().toISOString(),
       })
@@ -208,8 +221,9 @@ export async function POST(request: NextRequest) {
   console.info("[ebay-deletion] processed", {
     notificationId,
     status: result.status,
+    noMatchingAccount: result.status === "not_found",
   });
 
-  // eBay accepts 200/201/202/204 — acknowledge quickly after processing
+  // eBay accepts 200/201/202/204 — never 412 for missing accounts
   return new NextResponse(null, { status: 204 });
 }

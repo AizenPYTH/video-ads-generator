@@ -1,6 +1,19 @@
 import { createHash, createSign, generateKeyPairSync } from "crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+function pemToKeyBody(pem: string): string {
+  return pem
+    .replace("-----BEGIN PUBLIC KEY-----", "")
+    .replace("-----END PUBLIC KEY-----", "")
+    .replace(/\s+/g, "");
+}
+
+function makeSignatureHeader(kid: string, signature: string): string {
+  return Buffer.from(JSON.stringify({ kid, signature, alg: "ECDSA" })).toString(
+    "base64",
+  );
+}
+
 describe("eBay account deletion challenge + signature", () => {
   const ORIGINAL_ENV = { ...process.env };
 
@@ -11,12 +24,15 @@ describe("eBay account deletion challenge + signature", () => {
       "https://snowolf-lime.vercel.app/api/ebay/account-deletion";
     process.env.EBAY_ENVIRONMENT = "sandbox";
     process.env.EBAY_DELETION_SKIP_SIGNATURE = "false";
+    process.env.EBAY_CLIENT_ID = "prod-client-id";
+    process.env.EBAY_CLIENT_SECRET = "prod-client-secret";
     vi.resetModules();
   });
 
   afterEach(() => {
     process.env = { ...ORIGINAL_ENV };
     vi.resetModules();
+    vi.unstubAllGlobals();
   });
 
   it("builds SHA-256 challengeResponse with exact concatenation order", async () => {
@@ -39,9 +55,7 @@ describe("eBay account deletion challenge + signature", () => {
     const { buildChallengeResponse } = await import(
       "@/services/ebay/account-deletion"
     );
-    const wrong = createHash("sha256")
-      .update("a+b+c")
-      .digest("hex");
+    const wrong = createHash("sha256").update("a+b+c").digest("hex");
     process.env.EBAY_DELETION_VERIFICATION_TOKEN = "b";
     process.env.EBAY_DELETION_ENDPOINT_URL = "c";
     vi.resetModules();
@@ -77,88 +91,104 @@ describe("eBay account deletion challenge + signature", () => {
     );
   });
 
-  it("rejects missing signature header", async () => {
-    const { verifyEbayNotificationSignature } = await import(
+  it("rejects missing signature header with reason", async () => {
+    const { verifyEbayNotificationSignatureDetailed } = await import(
       "@/services/ebay/account-deletion"
     );
-    await expect(
-      verifyEbayNotificationSignature("{}", null),
-    ).resolves.toBe(false);
+    const result = await verifyEbayNotificationSignatureDetailed("{}", null);
+    expect(result.valid).toBe(false);
+    expect(result.failureStatus).toBe(412);
+    expect(result.diagnostics.reason).toBe("missing_x_ebay_signature_header");
+    expect(result.diagnostics.signatureHeaderPresent).toBe(false);
   });
 
-  it("rejects invalid signature", async () => {
-    const { verifyEbayNotificationSignature } = await import(
-      "@/services/ebay/account-deletion"
-    );
-    const fakeHeader = Buffer.from(
-      JSON.stringify({ kid: "kid-1", signature: "aaaa" }),
-    ).toString("base64");
-
-    // Mock fetch for public key + token to avoid network
-    const { publicKey, privateKey } = generateKeyPairSync("ec", {
-      namedCurve: "P-256",
-    });
-    void privateKey;
-
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (url: string) => {
-        if (String(url).includes("/oauth2/token")) {
-          return {
-            ok: true,
-            json: async () => ({ access_token: "app-token", expires_in: 7200 }),
-          } as Response;
-        }
-        if (String(url).includes("/public_key/")) {
-          return {
-            ok: true,
-            json: async () => ({
-              key: publicKey
-                .export({ type: "spki", format: "pem" })
-                .toString()
-                .replace(/-----BEGIN PUBLIC KEY-----/, "")
-                .replace(/-----END PUBLIC KEY-----/, "")
-                .replace(/\s+/g, ""),
-              algorithm: "ECDSA",
-            }),
-          } as Response;
-        }
-        return { ok: false, status: 404 } as Response;
-      }),
-    );
-
-    process.env.EBAY_CLIENT_ID = "id";
-    process.env.EBAY_CLIENT_SECRET = "secret";
-    process.env.EBAY_API_URL = "https://api.sandbox.ebay.com";
-
-    const ok = await verifyEbayNotificationSignature(
-      JSON.stringify({ hello: "world" }),
-      fakeHeader,
-    );
-    expect(ok).toBe(false);
-    vi.unstubAllGlobals();
-  });
-
-  it("accepts a correctly signed payload (SHA256)", async () => {
+  it("calls Production getPublicKey URL never sandbox", async () => {
     const { privateKey, publicKey } = generateKeyPairSync("ec", {
       namedCurve: "P-256",
     });
-    const body = JSON.stringify({
+    const message = {
       metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" },
       notification: { notificationId: "n-1", data: { userId: "u1" } },
-    });
-    const signer = createSign("SHA256");
-    signer.update(body);
+    };
+    // Official SDK signs JSON.stringify(parsedMessage)
+    const canonical = JSON.stringify(message);
+    const signer = createSign("ssl3-sha1");
+    signer.update(Buffer.from(canonical, "utf8"));
     const signature = signer.sign(privateKey, "base64");
-    const header = Buffer.from(
-      JSON.stringify({ kid: "kid-test", signature, alg: "ECDSA" }),
-    ).toString("base64");
+    const header = makeSignatureHeader("kid-prod", signature);
+    const keyBody = pemToKeyBody(
+      publicKey.export({ type: "spki", format: "pem" }).toString(),
+    );
 
-    const pem = publicKey.export({ type: "spki", format: "pem" }).toString();
-    const keyBody = pem
-      .replace("-----BEGIN PUBLIC KEY-----", "")
-      .replace("-----END PUBLIC KEY-----", "")
-      .replace(/\s+/g, "");
+    const fetchMock = vi.fn(async (url: string) => {
+      const u = String(url);
+      expect(u.includes("api.sandbox.ebay.com")).toBe(false);
+      if (u.includes("/oauth2/token")) {
+        expect(u).toBe("https://api.ebay.com/identity/v1/oauth2/token");
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ access_token: "app-token", expires_in: 7200 }),
+        } as Response;
+      }
+      if (u.includes("/public_key/")) {
+        expect(u.startsWith("https://api.ebay.com/commerce/notification/v1/public_key/")).toBe(
+          true,
+        );
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            key: keyBody,
+            algorithm: "ECDSA",
+            digest: "SHA1",
+          }),
+        } as Response;
+      }
+      return { ok: false, status: 404 } as Response;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    // Force SDK path to fail so local path exercises Production URLs
+    vi.doMock("event-notification-nodejs-sdk/lib/validator", () => ({
+      validateSignature: async () => false,
+    }));
+    vi.resetModules();
+
+    const { verifyEbayNotificationSignatureDetailed, clearPublicKeyCache } =
+      await import("@/services/ebay/account-deletion");
+    clearPublicKeyCache();
+
+    const result = await verifyEbayNotificationSignatureDetailed(
+      canonical,
+      header,
+      "application/json",
+    );
+    expect(result.valid).toBe(true);
+    expect(result.diagnostics.apiHost).toBe("https://api.ebay.com");
+    expect(result.diagnostics.publicKeyUrl).toContain(
+      "https://api.ebay.com/commerce/notification/v1/public_key/",
+    );
+    expect(result.diagnostics.keyId).toBe("kid-prod");
+    expect(result.diagnostics.publicKeyLoaded).toBe(true);
+  });
+
+  it("accepts ECC signature over JSON.stringify(message) with ssl3-sha1", async () => {
+    const { privateKey, publicKey } = generateKeyPairSync("ec", {
+      namedCurve: "P-256",
+    });
+    const message = {
+      metadata: { topic: "MARKETPLACE_ACCOUNT_DELETION" },
+      notification: { notificationId: "ecc-1", data: { userId: "u1" } },
+    };
+    const canonical = JSON.stringify(message);
+    const signer = createSign("ssl3-sha1");
+    signer.update(Buffer.from(canonical, "utf8"));
+    const signature = signer.sign(privateKey, "base64");
+    const header = makeSignatureHeader("kid-ecc", signature);
+    const keyBody = pemToKeyBody(
+      publicKey.export({ type: "spki", format: "pem" }).toString(),
+    );
 
     vi.stubGlobal(
       "fetch",
@@ -166,29 +196,143 @@ describe("eBay account deletion challenge + signature", () => {
         if (String(url).includes("/oauth2/token")) {
           return {
             ok: true,
+            status: 200,
             json: async () => ({ access_token: "app-token", expires_in: 7200 }),
           } as Response;
         }
         return {
           ok: true,
+          status: 200,
+          json: async () => ({
+            key: keyBody,
+            algorithm: "ECDSA",
+            digest: "SHA1",
+          }),
+        } as Response;
+      }),
+    );
+
+    vi.resetModules();
+    const { verifyEbayNotificationSignatureDetailed, clearPublicKeyCache } =
+      await import("@/services/ebay/account-deletion");
+    clearPublicKeyCache();
+
+    const result = await verifyEbayNotificationSignatureDetailed(
+      canonical,
+      header,
+    );
+    expect(result.valid).toBe(true);
+    expect(result.diagnostics.verificationResult).toBe(true);
+  });
+
+  it("rejects when body is mutated after signing", async () => {
+    const { privateKey, publicKey } = generateKeyPairSync("ec", {
+      namedCurve: "P-256",
+    });
+    const message = { hello: "world" };
+    const canonical = JSON.stringify(message);
+    const signer = createSign("ssl3-sha1");
+    signer.update(Buffer.from(canonical, "utf8"));
+    const signature = signer.sign(privateKey, "base64");
+    const header = makeSignatureHeader("kid-mut", signature);
+    const keyBody = pemToKeyBody(
+      publicKey.export({ type: "spki", format: "pem" }).toString(),
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (String(url).includes("/oauth2/token")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ access_token: "app-token", expires_in: 7200 }),
+          } as Response;
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ key: keyBody, algorithm: "ECDSA", digest: "SHA1" }),
+        } as Response;
+      }),
+    );
+
+    vi.resetModules();
+    const { verifyEbayNotificationSignatureDetailed, clearPublicKeyCache } =
+      await import("@/services/ebay/account-deletion");
+    clearPublicKeyCache();
+
+    const tampered = JSON.stringify({ hello: "TAMPERED" });
+    const result = await verifyEbayNotificationSignatureDetailed(
+      tampered,
+      header,
+    );
+    expect(result.valid).toBe(false);
+    expect(result.failureStatus).toBe(412);
+    expect(result.diagnostics.reason).toBe("signature_crypto_mismatch");
+  });
+
+  it("returns 500-class failure when getPublicKey auth fails", async () => {
+    const header = makeSignatureHeader("kid-bad", "aaaa");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (String(url).includes("/oauth2/token")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ access_token: "app-token", expires_in: 7200 }),
+          } as Response;
+        }
+        return { ok: false, status: 401, json: async () => ({}) } as Response;
+      }),
+    );
+
+    vi.resetModules();
+    const { verifyEbayNotificationSignatureDetailed, clearPublicKeyCache } =
+      await import("@/services/ebay/account-deletion");
+    clearPublicKeyCache();
+
+    const result = await verifyEbayNotificationSignatureDetailed("{}", header);
+    expect(result.valid).toBe(false);
+    expect(result.failureStatus).toBe(500);
+    expect(result.diagnostics.publicKeyHttpStatus).toBe(401);
+    expect(result.diagnostics.reason).toContain("production_credentials");
+  });
+
+  it("rejects wrong keyId / invalid signature bytes", async () => {
+    const { publicKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+    const header = makeSignatureHeader("wrong-kid", "not-a-real-signature");
+    const keyBody = pemToKeyBody(
+      publicKey.export({ type: "spki", format: "pem" }).toString(),
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (String(url).includes("/oauth2/token")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ access_token: "app-token", expires_in: 7200 }),
+          } as Response;
+        }
+        return {
+          ok: true,
+          status: 200,
           json: async () => ({ key: keyBody, algorithm: "ECDSA" }),
         } as Response;
       }),
     );
 
-    process.env.EBAY_CLIENT_ID = "id";
-    process.env.EBAY_CLIENT_SECRET = "secret";
-    process.env.EBAY_API_URL = "https://api.sandbox.ebay.com";
     vi.resetModules();
-
     const { verifyEbayNotificationSignature, clearPublicKeyCache } =
       await import("@/services/ebay/account-deletion");
     clearPublicKeyCache();
 
     await expect(
-      verifyEbayNotificationSignature(body, header),
-    ).resolves.toBe(true);
-    vi.unstubAllGlobals();
+      verifyEbayNotificationSignature(JSON.stringify({ a: 1 }), header),
+    ).resolves.toBe(false);
   });
 });
 
