@@ -222,6 +222,7 @@ export async function createEbayInventoryLocation(input: {
   city: string;
   postalCode: string;
   country?: string;
+  stateOrProvince?: string;
 }): Promise<EbayActionResult<{ key: string; name: string }>> {
   try {
     const userId = await requireUserId();

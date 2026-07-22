@@ -62,6 +62,7 @@ export function EbaySettings({
       addressLine1: "",
       city: "",
       postalCode: "",
+      stateOrProvince: "",
       country: "FR",
     },
   });
@@ -153,11 +154,20 @@ export function EbaySettings({
     addressLine1: string;
     city: string;
     postalCode: string;
+    stateOrProvince: string;
     country: string;
   }) {
     setIsCreatingLocation(true);
     try {
-      const result = await createEbayInventoryLocation(data);
+      const result = await createEbayInventoryLocation({
+        name: data.name,
+        addressLine1: data.addressLine1,
+        city: data.city,
+        postalCode: data.postalCode,
+        stateOrProvince: data.stateOrProvince || data.city,
+        // Toujours forcer un code ISO (évite « fr » / « France » mal acceptés)
+        country: (data.country || "FR").trim().toUpperCase() || "FR",
+      });
       if (result.error || !result.data) {
         toast.error(result.error ?? "Impossible de créer le lieu.");
         return;
@@ -331,6 +341,14 @@ export function EbaySettings({
               />
             </div>
             <div className="space-y-2">
+              <Label htmlFor="loc_region">Département / région</Label>
+              <Input
+                id="loc_region"
+                placeholder="Île-de-France (ou laissez = ville)"
+                {...locationForm.register("stateOrProvince")}
+              />
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="loc_postal">Code postal</Label>
               <Input
                 id="loc_postal"
@@ -339,12 +357,19 @@ export function EbaySettings({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="loc_country">Pays</Label>
-              <Input
+              <Label htmlFor="loc_country">Pays (code)</Label>
+              <select
                 id="loc_country"
-                placeholder="FR"
+                className={selectClassName}
                 {...locationForm.register("country", { required: true })}
-              />
+              >
+                <option value="FR">FR — France</option>
+                <option value="BE">BE — Belgique</option>
+                <option value="DE">DE — Allemagne</option>
+                <option value="ES">ES — Espagne</option>
+                <option value="IT">IT — Italie</option>
+                <option value="GB">GB — Royaume-Uni</option>
+              </select>
             </div>
             <div className="flex items-end">
               <Button
