@@ -40,6 +40,19 @@ describe("classifyImportUrl", () => {
         "https://www.utopya.fr/catalog/category/view/s/redmi-note-13-4g/id/4758/",
       ).kind,
     ).toBe("catalog");
+    expect(
+      classifyImportUrl(
+        "https://www.utopya.fr/xiaomi/redmi-note.html?&compatibilite=13314",
+      ).kind,
+    ).toBe("catalog");
+    expect(
+      classifyImportUrl("https://www.utopya.fr/xiaomi/redmi-note.html").kind,
+    ).toBe("catalog");
+    expect(
+      classifyImportUrl(
+        "https://www.utopya.fr/ecran-complet-vert-redmi-note-13-4g.html",
+      ).kind,
+    ).toBe("product");
   });
 });
 

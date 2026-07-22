@@ -118,6 +118,9 @@ export async function discoverCatalogProductUrls(
     /\/collections?\//i.test(validated.href) ||
     /\/categor/i.test(validated.href) ||
     /\/sch\//i.test(validated.href) ||
+    /(?:^|[?&])compatibilite=/i.test(validated.search) ||
+    (/\.html$/i.test(validated.pathname) &&
+      validated.pathname.replace(/^\//, "").split("/").length >= 2) ||
     classification.kind === "catalog";
 
   const { html } = await fetchWithScrapingBee({

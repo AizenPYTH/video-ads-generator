@@ -100,6 +100,16 @@ export function classifyImportUrl(rawUrl: string): ClassifiedUrl {
     };
   }
 
+  // Magento fiche produit explicite
+  if (/\/catalog\/product\/view\//i.test(pathLower)) {
+    return {
+      kind: "product",
+      reason: "Fiche produit Magento",
+      hostname,
+      pathname,
+    };
+  }
+
   if (
     /\/collections\//i.test(pathLower) ||
     /\/collection\//i.test(pathLower) ||
@@ -111,11 +121,45 @@ export function classifyImportUrl(rawUrl: string): ClassifiedUrl {
     /\/boutique\b/i.test(pathLower) ||
     /\/shop\b/i.test(pathLower) ||
     /\/search/i.test(pathLower) ||
-    /\/marques?\//i.test(pathLower)
+    /\/marques?\//i.test(pathLower) ||
+    /\/brand\//i.test(pathLower)
   ) {
     return {
       kind: "catalog",
       reason: "Catégorie ou boutique (plusieurs produits)",
+      hostname,
+      pathname,
+    };
+  }
+
+  // Filtres Magento / Utopya (ex. ?compatibilite=13314) = liste filtrée
+  if (
+    /(?:^|[?&])(?:compatibilite|cat|category|manufacturer|product_list_order)=/i.test(
+      parsed.search,
+    )
+  ) {
+    return {
+      kind: "catalog",
+      reason: "Catégorie filtrée (plusieurs produits)",
+      hostname,
+      pathname,
+    };
+  }
+
+  // Magento SEO : /marque/modele.html = catégorie ; /slug-produit.html = fiche
+  if (/\.html$/i.test(pathLower)) {
+    const segments = pathLower.replace(/^\//, "").replace(/\.html$/i, "").split("/");
+    if (segments.length >= 2) {
+      return {
+        kind: "catalog",
+        reason: "Catégorie Magento SEO (plusieurs produits)",
+        hostname,
+        pathname,
+      };
+    }
+    return {
+      kind: "product",
+      reason: "Fiche produit Magento SEO",
       hostname,
       pathname,
     };
