@@ -7,6 +7,8 @@ export interface ScrapedProduct {
   brand: string | null;
   sku: string | null;
   condition: string | null;
+  /** Caractéristiques eBay / fiche (Brand, Type, Compatible brand…) */
+  itemSpecifics?: Record<string, string>;
   sourceUrl: string;
   raw: Record<string, unknown>;
 }

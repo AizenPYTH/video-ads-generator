@@ -2,7 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { importFromUrl } from "@/services/scraping/url-import";
+import {
+  discoverCatalogProductUrls,
+  importFromUrl,
+} from "@/services/scraping/url-import";
 import { createAd } from "@/features/ads/actions";
 import {
   buildEbayDescription,
@@ -14,14 +17,24 @@ import {
 import { resolveCategoryForRow } from "@/features/imports/category-resolve";
 import { prepareProductImages } from "@/lib/images/dedupe";
 import { ensureRemoteImagesOnAd } from "@/features/ads/ensure-ad-images";
-import {
-  recalculateAdStatus,
-} from "@/features/ads/recalculate-status";
+import { recalculateAdStatus } from "@/features/ads/recalculate-status";
+import { classifyImportUrl } from "@/lib/scraping/url-kind";
+import { inferProductTypeFromTitle } from "@/lib/scraping/infer-product-type";
+import { AppError } from "@/lib/errors/app-error";
 
 export type UrlImportActionResult<T = void> = {
   error?: string;
   success?: boolean;
   data?: T;
+};
+
+export type UrlImportSuccessData = {
+  mode: "product" | "catalog";
+  adId?: string;
+  urlImportId?: string;
+  importedCount?: number;
+  failedCount?: number;
+  adIds?: string[];
 };
 
 async function requireUserId(): Promise<string> {
@@ -38,9 +51,99 @@ async function requireUserId(): Promise<string> {
   return user.id;
 }
 
+function buildItemSpecifics(input: {
+  scraped?: Record<string, string>;
+  brand: string | null;
+  asin: string | null;
+  title: string;
+}): Record<string, string> {
+  const specifics: Record<string, string> = { ...(input.scraped ?? {}) };
+
+  if (input.brand) {
+    specifics.Brand ??= input.brand;
+    specifics.Marque ??= input.brand;
+  }
+  if (input.asin) {
+    specifics.ASIN ??= input.asin;
+  }
+
+  const type =
+    specifics.Type ||
+    specifics["Product Type"] ||
+    specifics["Type de produit"] ||
+    inferProductTypeFromTitle(input.title);
+  if (type) {
+    specifics.Type ??= type;
+  }
+
+  return specifics;
+}
+
+/**
+ * Point d’entrée unique : détecte fiche produit vs boutique/catégorie.
+ */
 export async function importProductFromUrl(
   url: string,
-): Promise<UrlImportActionResult<{ adId: string; urlImportId: string }>> {
+): Promise<UrlImportActionResult<UrlImportSuccessData>> {
+  try {
+    const classification = classifyImportUrl(url);
+
+    if (classification.kind === "catalog") {
+      return importCatalogFromUrl(url);
+    }
+
+    return importSingleProductFromUrl(url);
+  } catch (err) {
+    if (err instanceof AppError) {
+      return { error: err.message };
+    }
+    return { error: err instanceof Error ? err.message : "Erreur inconnue." };
+  }
+}
+
+async function importCatalogFromUrl(
+  url: string,
+): Promise<UrlImportActionResult<UrlImportSuccessData>> {
+  const discovered = await discoverCatalogProductUrls(url);
+  const adIds: string[] = [];
+  let failedCount = 0;
+
+  for (const productUrl of discovered.productUrls) {
+    const result = await importSingleProductFromUrl(productUrl);
+    if (result.data?.adId) {
+      adIds.push(result.data.adId);
+    } else {
+      failedCount += 1;
+    }
+  }
+
+  if (adIds.length === 0) {
+    return {
+      error:
+        failedCount > 0
+          ? `Aucun produit n’a pu être importé (${failedCount} échec${failedCount > 1 ? "s" : ""}).`
+          : "Aucun produit trouvé à importer.",
+    };
+  }
+
+  revalidatePath("/dashboard/annonces");
+  revalidatePath("/dashboard/creer/url");
+
+  return {
+    success: true,
+    data: {
+      mode: "catalog",
+      importedCount: adIds.length,
+      failedCount,
+      adIds,
+      adId: adIds[0],
+    },
+  };
+}
+
+async function importSingleProductFromUrl(
+  url: string,
+): Promise<UrlImportActionResult<UrlImportSuccessData>> {
   try {
     const userId = await requireUserId();
     const supabase = await createClient();
@@ -81,7 +184,7 @@ export async function importProductFromUrl(
       const sku = buildSku({
         scrapedSku: looksLikeAsin(result.product.sku)
           ? result.product.sku
-          : asin ?? result.product.sku,
+          : (asin ?? result.product.sku),
         sourceUrl: result.validatedUrl,
         title: titre,
       });
@@ -92,6 +195,16 @@ export async function importProductFromUrl(
           ? result.product.price.toFixed(2)
           : null;
 
+      const itemSpecifics = buildItemSpecifics({
+        scraped: result.product.itemSpecifics,
+        brand: result.product.brand,
+        asin,
+        title: titre,
+      });
+
+      const productType =
+        itemSpecifics.Type || inferProductTypeFromTitle(titre);
+
       const imagePrep = await prepareProductImages(result.product.images, {
         max: 6,
         contentHash: true,
@@ -101,23 +214,21 @@ export async function importProductFromUrl(
         before: imagePrep.before,
         afterUrl: imagePrep.afterUrlDedupe,
         afterHash: imagePrep.afterContentDedupe,
+        specifics: Object.keys(itemSpecifics),
       });
 
       const resolution = await resolveCategoryForRow({
         titre,
         description,
         brand: result.product.brand,
-        model: null,
-        mpn: null,
+        model: itemSpecifics.Model || itemSpecifics.Modèle || null,
+        mpn: itemSpecifics.MPN || null,
         asin,
         externalReference: asin ?? sku,
         ebay_condition_id: ebayConditionId,
-        product_type: inferProductType(titre),
-        type: inferProductType(titre),
-        item_specifics: {
-          ...(result.product.brand ? { Brand: result.product.brand } : {}),
-          ...(asin ? { ASIN: asin } : {}),
-        },
+        product_type: productType,
+        type: productType,
+        item_specifics: itemSpecifics,
       });
 
       console.info("[url-import] category", {
@@ -159,13 +270,29 @@ export async function importProductFromUrl(
         technicalError: false,
       });
 
-      console.info("[url-import] status", {
-        adId,
-        old: "DRAFT",
-        new: statut,
-        price: prixVente,
-        categoryId: resolution.categoryId,
-      });
+      const metadataBase = {
+        source_url: result.validatedUrl,
+        provider: result.provider,
+        brand: result.product.brand,
+        currency: result.product.currency,
+        images: imagePrep.images.map((i) => i.url),
+        image_dedupe: {
+          before: imagePrep.before,
+          afterUrl: imagePrep.afterUrlDedupe,
+          afterHash: imagePrep.afterContentDedupe,
+        },
+        raw_title: result.product.title,
+        asin,
+        external_reference: asin ?? sku,
+        type: productType,
+        product_type: productType,
+        item_specifics: itemSpecifics,
+        category_resolution: resolution,
+        category_name: resolution.categoryName,
+        root_category_name: resolution.rootCategoryName,
+        subcategory_name: resolution.subcategoryName,
+        category_path: resolution.categoryPath,
+      };
 
       await supabase
         .from("ads")
@@ -182,30 +309,7 @@ export async function importProductFromUrl(
           statut,
           status: statut === "READY" ? "ready" : "draft",
           notes: null,
-          metadata: {
-            source_url: result.validatedUrl,
-            provider: result.provider,
-            brand: result.product.brand,
-            currency: result.product.currency,
-            images: imagePrep.images.map((i) => i.url),
-            image_dedupe: {
-              before: imagePrep.before,
-              afterUrl: imagePrep.afterUrlDedupe,
-              afterHash: imagePrep.afterContentDedupe,
-            },
-            raw_title: result.product.title,
-            asin,
-            external_reference: asin ?? sku,
-            item_specifics: {
-              ...(result.product.brand ? { Brand: result.product.brand } : {}),
-              ...(asin ? { ASIN: asin } : {}),
-            },
-            category_resolution: resolution,
-            category_name: resolution.categoryName,
-            root_category_name: resolution.rootCategoryName,
-            subcategory_name: resolution.subcategoryName,
-            category_path: resolution.categoryPath,
-          },
+          metadata: metadataBase,
         })
         .eq("id", adId);
 
@@ -229,31 +333,12 @@ export async function importProductFromUrl(
             .from("ads")
             .update({
               metadata: {
-                source_url: result.validatedUrl,
-                provider: result.provider,
-                brand: result.product.brand,
-                currency: result.product.currency,
+                ...metadataBase,
                 images: ensure.hosted.map((h) => h.url),
                 image_dedupe: {
-                  before: imagePrep.before,
-                  afterUrl: imagePrep.afterUrlDedupe,
-                  afterHash: imagePrep.afterContentDedupe,
+                  ...metadataBase.image_dedupe,
                   hosted: ensure.hosted.length,
                 },
-                raw_title: result.product.title,
-                asin,
-                external_reference: asin ?? sku,
-                item_specifics: {
-                  ...(result.product.brand
-                    ? { Brand: result.product.brand }
-                    : {}),
-                  ...(asin ? { ASIN: asin } : {}),
-                },
-                category_resolution: resolution,
-                category_name: resolution.categoryName,
-                root_category_name: resolution.rootCategoryName,
-                subcategory_name: resolution.subcategoryName,
-                category_path: resolution.categoryPath,
               },
             })
             .eq("id", adId);
@@ -282,6 +367,7 @@ export async function importProductFromUrl(
             category_name: resolution.categoryName,
             category_status: resolution.status,
             category_message: resolution.message,
+            item_specifics: itemSpecifics,
             statut,
           },
         })
@@ -293,7 +379,13 @@ export async function importProductFromUrl(
 
       return {
         success: true,
-        data: { adId, urlImportId: urlImport.id },
+        data: {
+          mode: "product",
+          adId,
+          urlImportId: urlImport.id,
+          importedCount: 1,
+          adIds: [adId],
+        },
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erreur d'import";
@@ -311,12 +403,4 @@ export async function importProductFromUrl(
 function looksLikeAsin(value: string | null | undefined): boolean {
   if (!value) return false;
   return /^B0[A-Z0-9]{8}$/i.test(value.trim());
-}
-
-function inferProductType(title: string): string | null {
-  const t = title.toLowerCase();
-  if (t.includes("headphone") || t.includes("headset") || t.includes("casque")) {
-    return "Casque audio";
-  }
-  return null;
 }

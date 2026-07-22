@@ -1,5 +1,6 @@
 import { decodeHtmlEntities } from "@/lib/html/decode-entities";
 import { extractJsonLd } from "@/lib/scraping/json-ld";
+import { inferProductTypeFromTitle } from "@/lib/scraping/infer-product-type";
 import { dedupeImageUrls } from "@/lib/images/dedupe";
 import { fetchWithScrapingBee } from "../scrapingbee";
 import type { ProductPageProvider, ScrapedProduct } from "./base";
@@ -100,8 +101,20 @@ export class GenericProductProvider implements ProductPageProvider {
       /\/(?:dp|gp\/product|product)\/([A-Z0-9]{10})(?:[/?]|$)/i,
     );
 
+    const itemSpecifics = extractJsonLdAdditionalProperties(html);
+    if (brandFromJsonLd) {
+      itemSpecifics.Brand ??= brandFromJsonLd;
+      itemSpecifics.Marque ??= brandFromJsonLd;
+    }
+
+    const titleText = decodeHtmlEntities(String(title).trim());
+    if (!itemSpecifics.Type) {
+      const inferred = inferProductTypeFromTitle(titleText);
+      if (inferred) itemSpecifics.Type = inferred;
+    }
+
     return {
-      title: decodeHtmlEntities(String(title).trim()),
+      title: titleText,
       description: description
         ? decodeHtmlEntities(String(description).trim())
         : null,
@@ -115,6 +128,7 @@ export class GenericProductProvider implements ProductPageProvider {
         null,
       sku: jsonLd?.sku ?? asinMatch?.[1] ?? null,
       condition: jsonLd?.itemCondition ?? (isAmazon ? "NewCondition" : null),
+      itemSpecifics,
       sourceUrl: url,
       raw: { jsonLd, openGraph, provider: this.name, isAmazon },
     };
@@ -423,4 +437,36 @@ function extractAmazonBrand(html: string): string | null {
   );
   if (byline?.[1]) return byline[1].replace(/Store/i, "").trim();
   return null;
+}
+
+function extractJsonLdAdditionalProperties(
+  html: string,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const m of html.matchAll(
+    /<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi,
+  )) {
+    try {
+      const parsed = JSON.parse(m[1]) as unknown;
+      const items = Array.isArray(parsed) ? parsed : [parsed];
+      for (const item of items) {
+        if (!item || typeof item !== "object") continue;
+        const props = (item as { additionalProperty?: unknown })
+          .additionalProperty;
+        if (!Array.isArray(props)) continue;
+        for (const prop of props) {
+          if (!prop || typeof prop !== "object") continue;
+          const name = (prop as { name?: unknown }).name;
+          const value = (prop as { value?: unknown }).value;
+          if (typeof name === "string" && value != null) {
+            const text = String(value).trim();
+            if (name.trim() && text) out[name.trim()] = text;
+          }
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return out;
 }

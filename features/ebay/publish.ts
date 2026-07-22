@@ -222,7 +222,7 @@ export async function publishAd(
 
     if (missingRequired.length > 0) {
       return {
-        error: `Caractéristiques eBay manquantes : ${missingRequired.join(", ")}. Vérifiez le CSV (Compatible brand, Brand, Type…) puis réessayez.`,
+        error: `Caractéristiques eBay manquantes : ${missingRequired.join(", ")}. Complétez-les dans l’annonce (Type, Marque, Marque compatible…) puis réessayez.`,
       };
     }
 

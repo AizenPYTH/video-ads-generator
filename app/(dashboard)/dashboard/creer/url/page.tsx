@@ -27,14 +27,15 @@ export default function CreerUrlPage() {
 
       <PageHeader
         title="Importer depuis un lien"
-        description="Collez l'adresse d'un produit pour préparer son annonce."
+        description="Collez une fiche produit (ex. eBay /itm/…) ou une catégorie / boutique pour importer plusieurs articles."
       />
 
       <Card className="border-border/70">
         <CardHeader>
-          <CardTitle className="text-lg">Adresse du produit</CardTitle>
+          <CardTitle className="text-lg">Adresse web</CardTitle>
           <CardDescription>
-            eBay, site marchand ou autre page produit compatible
+            Produit unique : caractéristiques récupérées automatiquement.
+            Boutique ou catégorie : jusqu’à 25 produits listés sur la page.
           </CardDescription>
         </CardHeader>
         <CardContent>
