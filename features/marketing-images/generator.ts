@@ -43,10 +43,10 @@ export type MarketingGenerationLog = {
 
 const OUTPUT = 1024;
 /**
- * Zone blanche centrale du cadre Snowwolf (mesurée sur le PNG fourni, 1024²).
+ * Zone blanche centrale du cadre Snowwolf (mesurée sur listing-frame.png, 1024²).
  * Le produit est centré exactement dans ce rectangle.
  */
-const FRAME_ZONE = { x: 194, y: 177, w: 634, h: 693 };
+const FRAME_ZONE = { x: 191, y: 177, w: 640, h: 719 };
 /** Remplit la zone blanche avec une petite marge (coins arrondis / badges). */
 const PRODUCT_FILL = 0.88;
 
