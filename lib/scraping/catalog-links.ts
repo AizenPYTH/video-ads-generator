@@ -148,7 +148,7 @@ export function extractCatalogProductCards(
     for (const m of html.matchAll(re)) {
       const href = m[1];
       const titleRaw = (m[2] || "").replace(/<[^>]+>/g, "");
-      let url = normalizeProductUrl(href, base);
+      const url = normalizeProductUrl(href, base);
       if (!url) continue;
       if (/\/catalog\/product\/view\//i.test(url)) continue;
       if (seen.has(url)) continue;
