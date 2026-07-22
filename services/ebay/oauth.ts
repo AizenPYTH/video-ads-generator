@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "crypto";
 import { AppError } from "@/lib/errors/app-error";
 import { encrypt, decrypt } from "@/lib/crypto/encryption";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { isEbayMockMode, resolveEbayApiHost } from "./client";
+import { isEbayMockMode, resolveEbayApiHost, resolveEbayAuthHost } from "./client";
 import { mockOAuthTokens } from "./mock";
 
 export interface EbayTokens {
@@ -24,21 +24,9 @@ function sanitizeEnv(value: string | undefined | null): string {
   return v.replace(/\r?\n/g, "").trim();
 }
 
+/** Toujours aligné sur le Client ID (SBX → sandbox, PRD → production). */
 function getEbayAuthUrl(): string {
-  const configured = sanitizeEnv(process.env.EBAY_AUTH_URL);
-  if (configured) {
-    // Ne jamais utiliser l'URL API pour l'authorize (et inversement).
-    if (configured.includes("api.")) {
-      return resolveEbayApiHost().includes("sandbox")
-        ? "https://auth.sandbox.ebay.com"
-        : "https://auth.ebay.com";
-    }
-    return configured.replace(/\/$/, "");
-  }
-
-  return resolveEbayApiHost().includes("sandbox")
-    ? "https://auth.sandbox.ebay.com"
-    : "https://auth.ebay.com";
+  return resolveEbayAuthHost();
 }
 
 function tokenUrlForHost(apiHost: string): string {

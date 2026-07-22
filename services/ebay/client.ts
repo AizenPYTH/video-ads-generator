@@ -26,7 +26,7 @@ function sanitizeEnvValue(value: string | undefined | null): string {
 
 /**
  * Host API eBay cohérent avec les credentials.
- * Priorité : hint Client ID (SBX/PRD) > EBAY_API_URL > EBAY_ENVIRONMENT.
+ * Priorité : hint Client ID (SBX/PRD) > EBAY_AUTH_URL > EBAY_API_URL > EBAY_ENVIRONMENT.
  */
 export function resolveEbayApiHost(): string {
   const clientId = sanitizeEnvValue(process.env.EBAY_CLIENT_ID);
@@ -34,6 +34,14 @@ export function resolveEbayApiHost(): string {
     return "https://api.sandbox.ebay.com";
   }
   if (/PRD/i.test(clientId)) {
+    return "https://api.ebay.com";
+  }
+
+  const auth = sanitizeEnvValue(process.env.EBAY_AUTH_URL).toLowerCase();
+  if (auth.includes("sandbox")) {
+    return "https://api.sandbox.ebay.com";
+  }
+  if (auth.includes("auth.ebay.com")) {
     return "https://api.ebay.com";
   }
 
@@ -45,6 +53,12 @@ export function resolveEbayApiHost(): string {
   return sanitizeEnvValue(process.env.EBAY_ENVIRONMENT) === "production"
     ? "https://api.ebay.com"
     : "https://api.sandbox.ebay.com";
+}
+
+export function resolveEbayAuthHost(): string {
+  return resolveEbayApiHost().includes("sandbox")
+    ? "https://auth.sandbox.ebay.com"
+    : "https://auth.ebay.com";
 }
 
 export function getEbayApiUrl(): string {
