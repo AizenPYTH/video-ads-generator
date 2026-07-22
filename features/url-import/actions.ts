@@ -5,7 +5,9 @@ import { createClient } from "@/lib/supabase/server";
 import {
   discoverCatalogProductUrls,
   importFromUrl,
+  scrapedProductFromCatalogCard,
 } from "@/services/scraping/url-import";
+import type { ScrapedProduct } from "@/services/scraping/providers/base";
 import { createAd } from "@/features/ads/actions";
 import {
   buildEbayDescription,
@@ -108,26 +110,62 @@ async function importCatalogFromUrl(
   const adIds: string[] = [];
   let failedCount = 0;
 
-  const CONCURRENCY = 3;
-  const urls = discovered.productUrls;
+  const richCards = discovered.cards.filter((c) => c.title || c.image);
+  const useGrid = richCards.length >= 2;
+
   console.info("[url-import] catalog discover", {
-    count: urls.length,
+    urls: discovered.productUrls.length,
+    cards: discovered.cards.length,
+    richCards: richCards.length,
+    mode: useGrid ? "grid" : "per-product",
     source: discovered.validatedUrl,
   });
 
-  for (let i = 0; i < urls.length; i += CONCURRENCY) {
-    const chunk = urls.slice(i, i + CONCURRENCY);
-    const results = await Promise.all(
-      chunk.map((productUrl) => importSingleProductFromUrl(productUrl)),
-    );
-    for (const result of results) {
-      if (result.data?.adId) {
-        adIds.push(result.data.adId);
-      } else {
-        failedCount += 1;
-        console.warn("[url-import] catalog item failed", {
-          error: result.error?.slice(0, 120),
-        });
+  if (useGrid) {
+    // Une seule page ScrapingBee déjà faite : créer les annonces depuis la grille
+    const CONCURRENCY = 5;
+    for (let i = 0; i < richCards.length; i += CONCURRENCY) {
+      const chunk = richCards.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        chunk.map(async (card) => {
+          const product = scrapedProductFromCatalogCard(card);
+          return persistScrapedProduct({
+            product,
+            validatedUrl: card.url,
+            provider: "catalog-grid",
+            hashImages: false,
+            // Grille : pas de Taxonomy par produit (évite timeout / 1 seul résultat).
+            // Catégorie eBay à confirmer ensuite en masse ou fiche par fiche.
+            resolveCategory: false,
+          });
+        }),
+      );
+      for (const result of results) {
+        if (result.data?.adId) adIds.push(result.data.adId);
+        else {
+          failedCount += 1;
+          console.warn("[url-import] catalog grid item failed", {
+            error: result.error?.slice(0, 120),
+          });
+        }
+      }
+    }
+  } else {
+    const CONCURRENCY = 3;
+    const urls = discovered.productUrls;
+    for (let i = 0; i < urls.length; i += CONCURRENCY) {
+      const chunk = urls.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        chunk.map((productUrl) => importSingleProductFromUrl(productUrl)),
+      );
+      for (const result of results) {
+        if (result.data?.adId) adIds.push(result.data.adId);
+        else {
+          failedCount += 1;
+          console.warn("[url-import] catalog item failed", {
+            error: result.error?.slice(0, 120),
+          });
+        }
       }
     }
   }
@@ -160,6 +198,30 @@ async function importSingleProductFromUrl(
   url: string,
 ): Promise<UrlImportActionResult<UrlImportSuccessData>> {
   try {
+    const result = await importFromUrl(url);
+    return persistScrapedProduct({
+      product: result.product,
+      validatedUrl: result.validatedUrl,
+      provider: result.provider,
+      hashImages: true,
+      resolveCategory: true,
+    });
+  } catch (err) {
+    if (err instanceof AppError) {
+      return { error: err.message };
+    }
+    return { error: err instanceof Error ? err.message : "Erreur inconnue." };
+  }
+}
+
+async function persistScrapedProduct(input: {
+  product: ScrapedProduct;
+  validatedUrl: string;
+  provider: string;
+  hashImages: boolean;
+  resolveCategory: boolean;
+}): Promise<UrlImportActionResult<UrlImportSuccessData>> {
+  try {
     const userId = await requireUserId();
     const supabase = await createClient();
 
@@ -167,7 +229,7 @@ async function importSingleProductFromUrl(
       .from("url_imports")
       .insert({
         user_id: userId,
-        url,
+        url: input.validatedUrl,
         statut: "FETCHING",
         metadata: {},
       })
@@ -179,40 +241,38 @@ async function importSingleProductFromUrl(
     }
 
     try {
-      const result = await importFromUrl(url);
-
       await supabase
         .from("url_imports")
         .update({ statut: "ANALYZING" })
         .eq("id", urlImport.id);
 
-      const titre = buildEbayTitle(result.product.title, result.product.brand);
+      const titre = buildEbayTitle(input.product.title, input.product.brand);
       const description = buildEbayDescription(
-        result.product.description,
+        input.product.description,
         titre,
       );
       const asin =
-        extractAmazonAsin(result.validatedUrl) ||
-        (result.product.sku && /^B0[A-Z0-9]{8}$/i.test(result.product.sku)
-          ? result.product.sku.toUpperCase()
+        extractAmazonAsin(input.validatedUrl) ||
+        (input.product.sku && /^B0[A-Z0-9]{8}$/i.test(input.product.sku)
+          ? input.product.sku.toUpperCase()
           : null);
       const sku = buildSku({
-        scrapedSku: looksLikeAsin(result.product.sku)
-          ? result.product.sku
-          : (asin ?? result.product.sku),
-        sourceUrl: result.validatedUrl,
+        scrapedSku: looksLikeAsin(input.product.sku)
+          ? input.product.sku
+          : (asin ?? input.product.sku),
+        sourceUrl: input.validatedUrl,
         title: titre,
       });
       const ebayConditionId =
-        mapEbayConditionId(result.product.condition) ?? "1000";
+        mapEbayConditionId(input.product.condition) ?? "1000";
       const prixVente =
-        result.product.price && result.product.price > 0
-          ? result.product.price.toFixed(2)
+        input.product.price && input.product.price > 0
+          ? input.product.price.toFixed(2)
           : null;
 
       const itemSpecifics = buildItemSpecifics({
-        scraped: result.product.itemSpecifics,
-        brand: result.product.brand,
+        scraped: input.product.itemSpecifics,
+        brand: input.product.brand,
         asin,
         title: titre,
       });
@@ -220,9 +280,9 @@ async function importSingleProductFromUrl(
       const productType =
         itemSpecifics.Type || inferProductTypeFromTitle(titre);
 
-      const imagePrep = await prepareProductImages(result.product.images, {
+      const imagePrep = await prepareProductImages(input.product.images, {
         max: 6,
-        contentHash: true,
+        contentHash: input.hashImages,
       });
 
       console.info("[url-import] images", {
@@ -230,21 +290,39 @@ async function importSingleProductFromUrl(
         afterUrl: imagePrep.afterUrlDedupe,
         afterHash: imagePrep.afterContentDedupe,
         specifics: Object.keys(itemSpecifics),
+        provider: input.provider,
       });
 
-      const resolution = await resolveCategoryForRow({
-        titre,
-        description,
-        brand: result.product.brand,
-        model: itemSpecifics.Model || itemSpecifics.Modèle || null,
-        mpn: itemSpecifics.MPN || null,
-        asin,
-        externalReference: asin ?? sku,
-        ebay_condition_id: ebayConditionId,
-        product_type: productType,
-        type: productType,
-        item_specifics: itemSpecifics,
-      });
+      const resolution = input.resolveCategory
+        ? await resolveCategoryForRow({
+            titre,
+            description,
+            brand: input.product.brand,
+            model: itemSpecifics.Model || itemSpecifics.Modèle || null,
+            mpn: itemSpecifics.MPN || null,
+            asin,
+            externalReference: asin ?? sku,
+            ebay_condition_id: ebayConditionId,
+            product_type: productType,
+            type: productType,
+            item_specifics: itemSpecifics,
+          })
+        : {
+            status: "needs_review" as const,
+            categoryId: null,
+            categoryName: null,
+            rootCategoryName: null,
+            subcategoryName: null,
+            categoryPath: [] as string[],
+            confidence: 0,
+            source: "none" as const,
+            taxonomySource: "eBay Taxonomy" as const,
+            alternatives: [],
+            missingAspects: [],
+            recommendedAspects: [],
+            allowedConditions: [],
+            message: "Catégorie à confirmer après import grille",
+          };
 
       console.info("[url-import] category", {
         status: resolution.status,
@@ -286,17 +364,17 @@ async function importSingleProductFromUrl(
       });
 
       const metadataBase = {
-        source_url: result.validatedUrl,
-        provider: result.provider,
-        brand: result.product.brand,
-        currency: result.product.currency,
+        source_url: input.validatedUrl,
+        provider: input.provider,
+        brand: input.product.brand,
+        currency: input.product.currency,
         images: imagePrep.images.map((i) => i.url),
         image_dedupe: {
           before: imagePrep.before,
           afterUrl: imagePrep.afterUrlDedupe,
           afterHash: imagePrep.afterContentDedupe,
         },
-        raw_title: result.product.title,
+        raw_title: input.product.title,
         asin,
         external_reference: asin ?? sku,
         type: productType,
@@ -371,7 +449,7 @@ async function importSingleProductFromUrl(
           statut: "COMPLETED",
           ad_id: adId,
           metadata: {
-            provider: result.provider,
+            provider: input.provider,
             title: titre,
             image_count: imagePrep.images.length,
             images_before: imagePrep.before,

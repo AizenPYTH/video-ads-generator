@@ -15,6 +15,9 @@ export const metadata = {
   title: "Import par URL — Smart Seller",
 };
 
+/** Import catalogue Utopya = 1 scrape + N créations d’annonces */
+export const maxDuration = 120;
+
 export default function CreerUrlPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">

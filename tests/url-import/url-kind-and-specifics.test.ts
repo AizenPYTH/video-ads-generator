@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { classifyImportUrl, isEbayItemUrl } from "@/lib/scraping/url-kind";
 import { inferProductTypeFromTitle } from "@/lib/scraping/infer-product-type";
-import { extractCatalogProductLinks } from "@/lib/scraping/catalog-links";
+import {
+  extractCatalogProductCards,
+  extractCatalogProductLinks,
+} from "@/lib/scraping/catalog-links";
 import { extractAllItemSpecifics } from "@/services/scraping/providers/ebay";
 
 describe("classifyImportUrl", () => {
@@ -109,6 +112,39 @@ describe("extractCatalogProductLinks", () => {
     );
     expect(links.some((l) => l.includes("/brand/"))).toBe(false);
     expect(links.some((l) => l.includes("/category/"))).toBe(false);
+  });
+
+  it("extracts Magento listing cards with title image sku brand", () => {
+    const html = `
+      <div class="item product product-item listing-item" data-sku="131387">
+        <a href="https://www.utopya.fr/ecran-complet-vert-redmi-note-13-4g.html" class="product photo product-item-photo">
+          <img class="product-image-photo" src="https://www.utopya.fr/media/catalog/product/cache/x/56000300n700-0000.jpg" alt="Ecran">
+        </a>
+        <div class="product-brand-logo" data-brand="Xiaomi"></div>
+        <a class="product-item-link name" href="https://www.utopya.fr/ecran-complet-vert-redmi-note-13-4g.html">
+          Ecran Complet Vert Redmi Note 13 4G
+        </a>
+      </div>
+      <div class="item product product-item listing-item" data-sku="423546">
+        <a href="https://www.utopya.fr/batterie-redmi-note-13-4g.html" class="product photo product-item-photo">
+          <img class="product-image-photo" src="https://www.utopya.fr/media/catalog/product/cache/x/batterie.jpg" alt="Batterie">
+        </a>
+        <div class="product-brand-logo" data-brand="Xiaomi"></div>
+        <a class="product-item-link name" href="https://www.utopya.fr/batterie-redmi-note-13-4g.html">
+          Batterie Redmi Note 13 4G
+        </a>
+      </div>
+    `;
+    const cards = extractCatalogProductCards(
+      html,
+      "https://www.utopya.fr/catalog/category/view/s/redmi-note-13-4g/id/4758/",
+    );
+    expect(cards.length).toBe(2);
+    expect(cards[0]?.title).toContain("Ecran Complet Vert");
+    expect(cards[0]?.sku).toBe("131387");
+    expect(cards[0]?.brand).toBe("Xiaomi");
+    expect(cards[0]?.image).toContain("56000300n700-0000.jpg");
+    expect(cards[1]?.title).toContain("Batterie");
   });
 
   it("collects eBay search result item links", () => {

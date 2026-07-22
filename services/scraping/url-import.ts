@@ -2,8 +2,10 @@ import { AppError } from "@/lib/errors/app-error";
 import { validateUrl } from "@/lib/validation/url";
 import { classifyImportUrl } from "@/lib/scraping/url-kind";
 import {
+  extractCatalogProductCards,
   extractCatalogProductLinks,
   MAX_CATALOG_PRODUCTS,
+  type CatalogProductCard,
 } from "@/lib/scraping/catalog-links";
 import { fetchWithScrapingBee } from "./scrapingbee";
 import { getProviderForUrl } from "./providers";
@@ -21,6 +23,8 @@ export interface CatalogDiscoverResult {
   validatedUrl: string;
   reason: string;
   productUrls: string[];
+  /** Cartes grille (Magento/Utopya) : titre + image sans re-scrape PDP */
+  cards: CatalogProductCard[];
 }
 
 export async function importFromUrl(rawUrl: string): Promise<UrlImportResult> {
@@ -61,6 +65,31 @@ export async function importFromUrl(rawUrl: string): Promise<UrlImportResult> {
   }
 }
 
+export function scrapedProductFromCatalogCard(
+  card: CatalogProductCard,
+): ScrapedProduct {
+  const title = (card.title || "Produit sans titre").trim();
+  const itemSpecifics: Record<string, string> = {};
+  if (card.brand) {
+    itemSpecifics.Brand = card.brand;
+    itemSpecifics.Marque = card.brand;
+  }
+
+  return {
+    title,
+    description: null,
+    price: card.price,
+    currency: "EUR",
+    images: card.image ? [card.image] : [],
+    brand: card.brand,
+    sku: card.sku,
+    condition: "New",
+    itemSpecifics,
+    sourceUrl: card.url,
+    raw: { from: "catalog-grid", sku: card.sku },
+  };
+}
+
 export async function discoverCatalogProductUrls(
   rawUrl: string,
 ): Promise<CatalogDiscoverResult> {
@@ -79,6 +108,7 @@ export async function discoverCatalogProductUrls(
       validatedUrl: validated.href,
       reason: classification.reason,
       productUrls: [validated.href],
+      cards: [],
     };
   }
 
@@ -99,11 +129,17 @@ export async function discoverCatalogProductUrls(
     blockResources: false,
   });
 
-  let productUrls = extractCatalogProductLinks(html, validated.href, {
+  let cards = extractCatalogProductCards(html, validated.href, {
     max: MAX_CATALOG_PRODUCTS,
   });
+  let productUrls =
+    cards.length > 0
+      ? cards.map((c) => c.url)
+      : extractCatalogProductLinks(html, validated.href, {
+          max: MAX_CATALOG_PRODUCTS,
+        });
 
-  // Une seule retry si rien trouvé (évite 15 min de double fetch systématique)
+  // Une seule retry si rien trouvé
   if (productUrls.length === 0 && looksLikeCategoryPage) {
     const retry = await fetchWithScrapingBee({
       url: validated.href,
@@ -113,9 +149,15 @@ export async function discoverCatalogProductUrls(
       waitMs: 6500,
       blockResources: false,
     });
-    productUrls = extractCatalogProductLinks(retry.html, validated.href, {
+    cards = extractCatalogProductCards(retry.html, validated.href, {
       max: MAX_CATALOG_PRODUCTS,
     });
+    productUrls =
+      cards.length > 0
+        ? cards.map((c) => c.url)
+        : extractCatalogProductLinks(retry.html, validated.href, {
+            max: MAX_CATALOG_PRODUCTS,
+          });
   }
 
   if (productUrls.length === 0) {
@@ -129,5 +171,6 @@ export async function discoverCatalogProductUrls(
     validatedUrl: validated.href,
     reason: classification.reason,
     productUrls,
+    cards,
   };
 }
