@@ -30,6 +30,14 @@ describe("classifyImportUrl", () => {
       ).kind,
     ).toBe("catalog");
   });
+
+  it("detects Magento / Utopya category pages as catalog", () => {
+    expect(
+      classifyImportUrl(
+        "https://www.utopya.fr/catalog/category/view/s/redmi-note-13-4g/id/4758/",
+      ).kind,
+    ).toBe("catalog");
+  });
 });
 
 describe("inferProductTypeFromTitle", () => {
@@ -77,5 +85,29 @@ describe("extractCatalogProductLinks", () => {
     expect(links).toContain("https://www.ebay.fr/itm/222");
     expect(links).toContain("https://www.utopya.fr/products/ecran-iphone-11");
     expect(links.some((l) => l.includes("/collections/"))).toBe(false);
+  });
+
+  it("collects Magento / Utopya product-item-link grid products", () => {
+    const html = `
+      <a href="/apple/iphone.html">nav</a>
+      <a class="product-item-link name" href="/ecran-complet-vert-redmi-note-13-4g.html">Écran vert</a>
+      <a class="product-item-link name" href="/batterie-redmi-note-13-4g.html">Batterie</a>
+      <a class="product-item-link name" href="/camera-avant-redmi-note-13.html">Caméra</a>
+      <a href="/brand/xiaomi.html">marque</a>
+      <a href="/catalog/category/view/s/x/id/1/">cat</a>
+    `;
+    const links = extractCatalogProductLinks(
+      html,
+      "https://www.utopya.fr/catalog/category/view/s/redmi-note-13-4g/id/4758/",
+    );
+    expect(links.length).toBe(3);
+    expect(links).toContain(
+      "https://www.utopya.fr/ecran-complet-vert-redmi-note-13-4g.html",
+    );
+    expect(links).toContain(
+      "https://www.utopya.fr/batterie-redmi-note-13-4g.html",
+    );
+    expect(links.some((l) => l.includes("/brand/"))).toBe(false);
+    expect(links.some((l) => l.includes("/category/"))).toBe(false);
   });
 });

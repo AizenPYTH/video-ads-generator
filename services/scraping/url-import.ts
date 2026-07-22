@@ -83,18 +83,37 @@ export async function discoverCatalogProductUrls(
   }
 
   const isEbay = /ebay\./i.test(validated.hostname);
+  const isMagentoCatalog =
+    /\/catalog\/category\//i.test(validated.pathname) ||
+    /utopya\.fr$/i.test(validated.hostname);
+
   const { html } = await fetchWithScrapingBee({
     url: validated.href,
     renderJs: true,
     premiumProxy: true,
     countryCode: "fr",
-    waitMs: isEbay ? 3000 : 2000,
+    waitMs: isEbay ? 3000 : isMagentoCatalog ? 4500 : 2000,
     blockResources: false,
   });
 
-  const productUrls = extractCatalogProductLinks(html, validated.href, {
+  let productUrls = extractCatalogProductLinks(html, validated.href, {
     max: MAX_CATALOG_PRODUCTS,
   });
+
+  // Deuxième passe si la grille Magento n’était pas encore hydratée
+  if (productUrls.length <= 1 && isMagentoCatalog) {
+    const retry = await fetchWithScrapingBee({
+      url: validated.href,
+      renderJs: true,
+      premiumProxy: true,
+      countryCode: "fr",
+      waitMs: 7000,
+      blockResources: false,
+    });
+    productUrls = extractCatalogProductLinks(retry.html, validated.href, {
+      max: MAX_CATALOG_PRODUCTS,
+    });
+  }
 
   if (productUrls.length === 0) {
     throw AppError.validation(
