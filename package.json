@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "generate-templates": "npx tsx scripts/generate-templates.ts"
+    "generate-templates": "npx tsx scripts/generate-templates.ts",
+    "ebay:deletion-challenge": "npx tsx scripts/ebay-deletion-challenge.ts"
   },
   "dependencies": {
     "@google-cloud/vision": "^5.3.7",

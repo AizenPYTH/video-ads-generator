@@ -293,6 +293,26 @@ export type EbayPublicationAttemptsRow = {
   updated_at: Timestamp;
 };
 
+export type EbayAccountDeletionNotificationsRow = {
+  id: UUID;
+  notification_id: string;
+  topic: string;
+  ebay_user_id: string | null;
+  ebay_username: string | null;
+  eias_token_hash: string | null;
+  internal_account_id: UUID | null;
+  smart_seller_user_id: UUID | null;
+  received_at: Timestamp;
+  verified_at: Timestamp | null;
+  processed_at: Timestamp | null;
+  status: string;
+  error_message: string | null;
+  processing_summary: Json;
+  publish_attempt_count: number | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+};
+
 export type SubscriptionPlansRow = {
   id: UUID;
   code: string;
@@ -481,6 +501,9 @@ export type Database = {
       ebay_locations: { Row: EbayLocationsRow };
       ebay_tokens: { Row: EbayTokensRow };
       ebay_publication_attempts: { Row: EbayPublicationAttemptsRow };
+      ebay_account_deletion_notifications: {
+        Row: EbayAccountDeletionNotificationsRow;
+      };
 
       subscription_plans: { Row: SubscriptionPlansRow };
       subscriptions: { Row: SubscriptionsRow };
