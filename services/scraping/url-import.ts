@@ -113,14 +113,20 @@ export async function discoverCatalogProductUrls(
   }
 
   const isEbay = /ebay\./i.test(validated.hostname);
+  let pathName = "/";
+  try {
+    pathName = new URL(validated.href).pathname;
+  } catch {
+    /* ignore */
+  }
   const looksLikeCategoryPage =
     /\/catalog\/category\//i.test(validated.href) ||
     /\/collections?\//i.test(validated.href) ||
     /\/categor/i.test(validated.href) ||
     /\/sch\//i.test(validated.href) ||
-    /(?:^|[?&])compatibilite=/i.test(validated.search) ||
-    (/\.html$/i.test(validated.pathname) &&
-      validated.pathname.replace(/^\//, "").split("/").length >= 2) ||
+    /(?:^|[?&])compatibilite=/i.test(validated.href) ||
+    (/\.html$/i.test(pathName) &&
+      pathName.replace(/^\//, "").split("/").length >= 2) ||
     classification.kind === "catalog";
 
   const { html } = await fetchWithScrapingBee({
