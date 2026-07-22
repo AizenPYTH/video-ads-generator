@@ -42,13 +42,13 @@ export type MarketingGenerationLog = {
 };
 
 const OUTPUT = 1024;
-/** Zone blanche centrale du cadre (mesurée sur listing-frame). */
-const FRAME_ZONE = { x: 186, y: 186, w: 648, h: 710 };
 /**
- * Le produit occupe une fraction de la zone (pas tout le blanc) :
- * trop grand = aspect « nul », badges écrasés.
+ * Zone blanche centrale du cadre Snowwolf (mesurée sur le PNG fourni, 1024²).
+ * Le produit est centré exactement dans ce rectangle.
  */
-const PRODUCT_FILL = 0.58;
+const FRAME_ZONE = { x: 194, y: 177, w: 634, h: 693 };
+/** Remplit la zone blanche avec une petite marge (coins arrondis / badges). */
+const PRODUCT_FILL = 0.88;
 
 function getFramePath(): string {
   return path.join(process.cwd(), "public", "brand", "listing-frame.png");
@@ -216,8 +216,16 @@ export async function generateMarketingImage(
   const pMeta = await sharp(productResized).metadata();
   const pw = pMeta.width ?? usableW;
   const ph = pMeta.height ?? usableH;
+  // Centrage exact dans la zone blanche
   const left = Math.round(FRAME_ZONE.x + (FRAME_ZONE.w - pw) / 2);
   const top = Math.round(FRAME_ZONE.y + (FRAME_ZONE.h - ph) / 2);
+
+  console.info("[marketing] placement produit", {
+    zone: FRAME_ZONE,
+    product: { w: pw, h: ph },
+    left,
+    top,
+  });
 
   let result: Buffer;
 

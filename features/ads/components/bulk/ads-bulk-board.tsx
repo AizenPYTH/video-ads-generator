@@ -33,6 +33,7 @@ import {
   bulkSetDraftAds,
   bulkUpdateAds,
 } from "@/features/ads/bulk-actions";
+import { bulkApplyMarketingFrame } from "@/features/marketing-images/actions";
 import { uploadImageWithPath } from "@/components/uploads/upload-image";
 import { addAdImages } from "@/features/ads/actions";
 import { cn } from "@/lib/utils";
@@ -165,6 +166,34 @@ export function AdsBulkBoard({ ads: initialAds }: Props) {
         onEditPriceQty={() => setPriceOpen(true)}
         onCommonImage={() => commonInputRef.current?.click()}
         onMatchImages={() => setMatchOpen(true)}
+        onApplyMarketingFrame={() => {
+          startTransition(async () => {
+            toast.message("Application du cadre Snowwolf…", {
+              description: "Cela peut prendre quelques secondes par annonce.",
+            });
+            const r = await bulkApplyMarketingFrame(selectedIds);
+            if (r.error) {
+              toast.error(r.error);
+              return;
+            }
+            const ok = r.data?.successCount ?? 0;
+            const fail = r.data?.failCount ?? 0;
+            if (ok > 0) {
+              toast.success(
+                `${ok} cadre${ok > 1 ? "s" : ""} appliqué${ok > 1 ? "s" : ""}${
+                  fail ? ` · ${fail} échec${fail > 1 ? "s" : ""}` : ""
+                }.`,
+              );
+              router.refresh();
+            } else {
+              toast.error(
+                fail
+                  ? `Aucun cadre appliqué (${fail} échec${fail > 1 ? "s" : ""}). Vérifiez que chaque annonce a une image.`
+                  : "Aucun cadre appliqué.",
+              );
+            }
+          });
+        }}
         onApplyPolicies={() => {
           startTransition(async () => {
             const r = await bulkApplyDefaultPoliciesFlag(selectedIds);

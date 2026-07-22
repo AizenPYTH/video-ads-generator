@@ -3,6 +3,7 @@
 import {
   Archive,
   FileImage,
+  Frame,
   Pencil,
   Shield,
   Trash2,
@@ -18,6 +19,7 @@ type Props = {
   onEditPriceQty: () => void;
   onCommonImage: () => void;
   onMatchImages: () => void;
+  onApplyMarketingFrame: () => void;
   onApplyPolicies: () => void;
   onDraft: () => void;
   onArchive: () => void;
@@ -32,6 +34,7 @@ export function AdsBulkToolbar({
   onEditPriceQty,
   onCommonImage,
   onMatchImages,
+  onApplyMarketingFrame,
   onApplyPolicies,
   onDraft,
   onArchive,
@@ -64,6 +67,15 @@ export function AdsBulkToolbar({
       >
         <Pencil className="h-4 w-4" />
         Prix / qté
+      </Button>
+      <Button
+        size="sm"
+        variant="glacier"
+        disabled={disabled}
+        onClick={onApplyMarketingFrame}
+      >
+        <Frame className="h-4 w-4" />
+        Cadre Snowwolf
       </Button>
       <Button
         size="sm"

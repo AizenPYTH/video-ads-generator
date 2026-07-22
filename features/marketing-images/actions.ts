@@ -281,3 +281,157 @@ export async function generateAndStoreMarketingImage(input: {
     },
   };
 }
+
+export type BulkMarketingItemResult = {
+  adId: string;
+  titre: string | null;
+  success: boolean;
+  error?: string;
+  imageUrl?: string;
+};
+
+const BULK_MARKETING_LIMIT = 40;
+const BULK_MARKETING_CONCURRENCY = 2;
+
+/**
+ * Applique le cadre Snowwolf à plusieurs annonces (image principale → cadre → ajout).
+ */
+export async function bulkApplyMarketingFrame(
+  adIds: string[],
+): Promise<
+  MarketingImageActionResult<{
+    results: BulkMarketingItemResult[];
+    successCount: number;
+    failCount: number;
+  }>
+> {
+  try {
+    const userId = await requireUserId();
+    const supabase = await createClient();
+    const uniqueIds = [...new Set(adIds.filter(Boolean))];
+
+    if (uniqueIds.length === 0) {
+      return { error: "Aucune annonce sélectionnée." };
+    }
+    if (uniqueIds.length > BULK_MARKETING_LIMIT) {
+      return {
+        error: `Maximum ${BULK_MARKETING_LIMIT} annonces à la fois pour le cadre marketing.`,
+      };
+    }
+
+    const { data: ads, error: adsError } = await supabase
+      .from("ads")
+      .select("id, titre, prix_vente, metadata")
+      .eq("user_id", userId)
+      .in("id", uniqueIds);
+
+    if (adsError || !ads?.length) {
+      return { error: "Annonces introuvables." };
+    }
+
+    const { data: images } = await supabase
+      .from("ad_images")
+      .select("ad_id, url, storage_path, ordre, est_principale")
+      .eq("user_id", userId)
+      .in("ad_id", uniqueIds)
+      .order("ordre", { ascending: true });
+
+    const primaryByAd = new Map<
+      string,
+      { url: string; storage_path: string | null }
+    >();
+    for (const img of images ?? []) {
+      if (!primaryByAd.has(img.ad_id) || img.est_principale) {
+        primaryByAd.set(img.ad_id, {
+          url: img.url,
+          storage_path: img.storage_path ?? null,
+        });
+      }
+    }
+
+    // Fallback metadata.images[0]
+    for (const ad of ads) {
+      if (primaryByAd.has(ad.id)) continue;
+      const meta =
+        ad.metadata && typeof ad.metadata === "object"
+          ? (ad.metadata as Record<string, unknown>)
+          : {};
+      const list = Array.isArray(meta.images) ? (meta.images as string[]) : [];
+      if (list[0]) {
+        primaryByAd.set(ad.id, { url: list[0], storage_path: null });
+      }
+    }
+
+    const results: BulkMarketingItemResult[] = [];
+    const queue = [...ads];
+
+    async function worker() {
+      while (queue.length) {
+        const ad = queue.shift();
+        if (!ad) break;
+        const primary = primaryByAd.get(ad.id);
+        if (!primary?.url) {
+          results.push({
+            adId: ad.id,
+            titre: ad.titre,
+            success: false,
+            error: "Aucune image produit",
+          });
+          continue;
+        }
+
+        const brand =
+          ad.metadata &&
+          typeof ad.metadata === "object" &&
+          typeof (ad.metadata as { brand?: string }).brand === "string"
+            ? (ad.metadata as { brand: string }).brand
+            : undefined;
+
+        const generated = await generateAndStoreMarketingImage({
+          adId: ad.id,
+          productImageUrl: primary.url,
+          storagePath: primary.storage_path,
+          title: ad.titre?.trim() || "Produit",
+          price:
+            ad.prix_vente != null ? String(ad.prix_vente) : undefined,
+          brand,
+          attachToAd: true,
+        });
+
+        if (generated.error || !generated.data) {
+          results.push({
+            adId: ad.id,
+            titre: ad.titre,
+            success: false,
+            error: generated.error ?? "Échec",
+          });
+        } else {
+          results.push({
+            adId: ad.id,
+            titre: ad.titre,
+            success: true,
+            imageUrl: generated.data.imageUrl,
+          });
+        }
+      }
+    }
+
+    await Promise.all(
+      Array.from({ length: BULK_MARKETING_CONCURRENCY }, () => worker()),
+    );
+
+    const successCount = results.filter((r) => r.success).length;
+    const failCount = results.length - successCount;
+
+    revalidatePath("/dashboard/annonces");
+
+    return {
+      success: true,
+      data: { results, successCount, failCount },
+    };
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Erreur cadre marketing.",
+    };
+  }
+}
