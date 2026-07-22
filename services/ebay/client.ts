@@ -4,6 +4,8 @@ import { mockEbayResponse } from "./mock";
 export interface EbayClientConfig {
   accessToken: string;
   marketplaceId?: string;
+  /** Override API host (ex. Taxonomy auto-détecté sandbox/production). */
+  baseUrl?: string;
 }
 
 export function isEbayMockMode(): boolean {
@@ -12,7 +14,7 @@ export function isEbayMockMode(): boolean {
 
 export function getEbayApiUrl(): string {
   return (
-    process.env.EBAY_API_URL ??
+    process.env.EBAY_API_URL?.trim() ||
     (process.env.EBAY_ENVIRONMENT === "production"
       ? "https://api.ebay.com"
       : "https://api.sandbox.ebay.com")
@@ -30,7 +32,10 @@ export class EbayClient {
 
   constructor(config: EbayClientConfig) {
     this.accessToken = config.accessToken;
-    this.baseUrl = getEbayApiUrl();
+    this.baseUrl = (config.baseUrl?.trim() || getEbayApiUrl()).replace(
+      /\/$/,
+      "",
+    );
     this.marketplaceId = config.marketplaceId ?? getEbayMarketplaceId();
   }
 

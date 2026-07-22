@@ -108,12 +108,27 @@ async function importCatalogFromUrl(
   const adIds: string[] = [];
   let failedCount = 0;
 
-  for (const productUrl of discovered.productUrls) {
-    const result = await importSingleProductFromUrl(productUrl);
-    if (result.data?.adId) {
-      adIds.push(result.data.adId);
-    } else {
-      failedCount += 1;
+  const CONCURRENCY = 3;
+  const urls = discovered.productUrls;
+  console.info("[url-import] catalog discover", {
+    count: urls.length,
+    source: discovered.validatedUrl,
+  });
+
+  for (let i = 0; i < urls.length; i += CONCURRENCY) {
+    const chunk = urls.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(
+      chunk.map((productUrl) => importSingleProductFromUrl(productUrl)),
+    );
+    for (const result of results) {
+      if (result.data?.adId) {
+        adIds.push(result.data.adId);
+      } else {
+        failedCount += 1;
+        console.warn("[url-import] catalog item failed", {
+          error: result.error?.slice(0, 120),
+        });
+      }
     }
   }
 

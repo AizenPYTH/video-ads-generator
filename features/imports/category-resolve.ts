@@ -628,68 +628,84 @@ async function enrichResolution(
 ): Promise<CategoryResolution> {
   if (!resolution.categoryId) return resolution;
 
-  const [aspects, allowedConditions, validated] = await Promise.all([
-    getItemAspectsForCategory(resolution.categoryId),
-    getConditionPoliciesForCategory(resolution.categoryId),
-    validateCategoryId(
-      resolution.categoryId,
-      input.titre || resolution.categoryName || undefined,
-    ),
-  ]);
+  try {
+    const [aspects, allowedConditions, validated] = await Promise.all([
+      getItemAspectsForCategory(resolution.categoryId),
+      getConditionPoliciesForCategory(resolution.categoryId),
+      validateCategoryId(
+        resolution.categoryId,
+        input.titre || resolution.categoryName || undefined,
+      ),
+    ]);
 
-  const categoryPath =
-    validated.categoryPath?.length
-      ? validated.categoryPath
-      : resolution.categoryPath;
-  const rootCategoryName =
-    matchRootFromPath(categoryPath) ||
-    resolution.rootCategoryName ||
-    inferPreferredRoot(input.titre ?? "") ||
-    null;
-  const subcategoryName =
-    validated.categoryName ||
-    resolution.subcategoryName ||
-    resolution.categoryName;
+    const categoryPath =
+      validated.categoryPath?.length
+        ? validated.categoryPath
+        : resolution.categoryPath;
+    const rootCategoryName =
+      matchRootFromPath(categoryPath) ||
+      resolution.rootCategoryName ||
+      inferPreferredRoot(input.titre ?? "") ||
+      null;
+    const subcategoryName =
+      validated.categoryName ||
+      resolution.subcategoryName ||
+      resolution.categoryName;
 
-  const missingAspects = aspects
-    .filter((a) => a.required)
-    .map((a) => a.name)
-    .filter((name) => !hasAspect(input, name));
+    const missingAspects = aspects
+      .filter((a) => a.required)
+      .map((a) => a.name)
+      .filter((name) => !hasAspect(input, name));
 
-  const recommendedAspects = aspects
-    .filter((a) => !a.required)
-    .map((a) => a.name)
-    .slice(0, 12);
+    const recommendedAspects = aspects
+      .filter((a) => !a.required)
+      .map((a) => a.name)
+      .slice(0, 12);
 
-  const conditionId = input.ebay_condition_id?.trim();
-  const invalidCondition = Boolean(
-    conditionId &&
-      allowedConditions.length > 0 &&
-      !allowedConditions.some((c) => c.conditionId === conditionId),
-  );
+    const conditionId = input.ebay_condition_id?.trim();
+    const invalidCondition = Boolean(
+      conditionId &&
+        allowedConditions.length > 0 &&
+        !allowedConditions.some((c) => c.conditionId === conditionId),
+    );
 
-  const needsReview =
-    resolution.status !== "resolved" ||
-    missingAspects.length > 0 ||
-    invalidCondition;
+    const needsReview =
+      resolution.status !== "resolved" ||
+      missingAspects.length > 0 ||
+      invalidCondition;
 
-  return {
-    ...resolution,
-    categoryName: subcategoryName,
-    subcategoryName,
-    rootCategoryName,
-    categoryPath,
-    status: needsReview ? "needs_review" : "resolved",
-    missingAspects,
-    recommendedAspects,
-    allowedConditions,
-    invalidCondition,
-    message: invalidCondition
-      ? "Condition ID non autorisée pour cette catégorie eBay."
-      : missingAspects.length
-        ? "Catégorie probable mais champs eBay obligatoires manquants."
-        : resolution.message,
-  };
+    return {
+      ...resolution,
+      categoryName: subcategoryName,
+      subcategoryName,
+      rootCategoryName,
+      categoryPath,
+      status: needsReview ? "needs_review" : "resolved",
+      missingAspects,
+      recommendedAspects,
+      allowedConditions,
+      invalidCondition,
+      message: invalidCondition
+        ? "Condition ID non autorisée pour cette catégorie eBay."
+        : missingAspects.length
+          ? "Catégorie probable mais champs eBay obligatoires manquants."
+          : resolution.message,
+    };
+  } catch (err) {
+    console.warn("[category-resolve] enrich failed", {
+      categoryId: resolution.categoryId,
+      message: err instanceof Error ? err.message : "enrich_error",
+    });
+    return {
+      ...resolution,
+      status: "needs_review",
+      message:
+        resolution.message ||
+        (err instanceof Error
+          ? err.message
+          : "Enrichissement catégorie eBay incomplet."),
+    };
+  }
 }
 
 function hasAspect(input: CategoryResolveInput, aspectName: string): boolean {

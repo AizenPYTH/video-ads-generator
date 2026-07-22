@@ -110,4 +110,19 @@ describe("extractCatalogProductLinks", () => {
     expect(links.some((l) => l.includes("/brand/"))).toBe(false);
     expect(links.some((l) => l.includes("/category/"))).toBe(false);
   });
+
+  it("collects eBay search result item links", () => {
+    const html = `
+      <a class="s-item__link" href="https://www.ebay.fr/itm/405037724398?hash=item">A</a>
+      <a class="s-item__link" href="https://www.ebay.fr/itm/123456789012">B</a>
+      <a href="https://www.ebay.fr/sch/i.html?_nkw=x">search</a>
+    `;
+    const links = extractCatalogProductLinks(
+      html,
+      "https://www.ebay.fr/sch/i.html?_nkw=ecran",
+    );
+    expect(links.length).toBe(2);
+    expect(links).toContain("https://www.ebay.fr/itm/405037724398");
+    expect(links).toContain("https://www.ebay.fr/itm/123456789012");
+  });
 });

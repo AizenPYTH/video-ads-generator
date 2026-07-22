@@ -83,16 +83,19 @@ export async function discoverCatalogProductUrls(
   }
 
   const isEbay = /ebay\./i.test(validated.hostname);
-  const isMagentoCatalog =
+  const looksLikeCategoryPage =
     /\/catalog\/category\//i.test(validated.href) ||
-    /utopya\.fr$/i.test(validated.hostname);
+    /\/collections?\//i.test(validated.href) ||
+    /\/categor/i.test(validated.href) ||
+    /\/sch\//i.test(validated.href) ||
+    classification.kind === "catalog";
 
   const { html } = await fetchWithScrapingBee({
     url: validated.href,
     renderJs: true,
     premiumProxy: true,
     countryCode: "fr",
-    waitMs: isEbay ? 3000 : isMagentoCatalog ? 4500 : 2000,
+    waitMs: isEbay ? 3500 : looksLikeCategoryPage ? 4000 : 2000,
     blockResources: false,
   });
 
@@ -100,14 +103,14 @@ export async function discoverCatalogProductUrls(
     max: MAX_CATALOG_PRODUCTS,
   });
 
-  // Deuxième passe si la grille Magento n’était pas encore hydratée
-  if (productUrls.length <= 1 && isMagentoCatalog) {
+  // Une seule retry si rien trouvé (évite 15 min de double fetch systématique)
+  if (productUrls.length === 0 && looksLikeCategoryPage) {
     const retry = await fetchWithScrapingBee({
       url: validated.href,
       renderJs: true,
       premiumProxy: true,
       countryCode: "fr",
-      waitMs: 7000,
+      waitMs: 6500,
       blockResources: false,
     });
     productUrls = extractCatalogProductLinks(retry.html, validated.href, {

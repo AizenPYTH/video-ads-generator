@@ -1,23 +1,33 @@
 /**
  * Extrait les liens fiches produit depuis une page catalogue (catégorie / boutique / recherche).
+ * Générique : eBay, Shopify, Magento/Utopya, Amazon.
  */
 
 const MAX_CATALOG_PRODUCTS = 25;
 
 const SKIP_PATH =
-  /\/(?:collections?|categor(?:y|ies)|catalog\/category|customer|checkout|cart|search|account|login|wishlist|brand\/|marques?\/)(?:\/|$)/i;
+  /\/(?:collections?|categor(?:y|ies)|catalog\/category|customer|checkout|cart|search|account|login|wishlist|brand\/|marques?\/|seller|str\/)(?:\/|$)/i;
 
 function isLikelyNavOrCategory(path: string): boolean {
   if (SKIP_PATH.test(path)) return true;
-  // Magento category SEO pages often look like /apple/iphone.html (multi-segment)
-  // Real product pages on Utopya are usually /slug-produit.html (single segment).
   const segments = path.replace(/^\//, "").replace(/\.html$/i, "").split("/");
   if (segments.length >= 2 && path.endsWith(".html")) {
-    // Keep Magento nested product paths rare; treat multi-level .html as category/nav
-    // unless it's catalog/product/view
     if (!/\/catalog\/product\/view\//i.test(path)) return true;
   }
   return false;
+}
+
+function collectFromPatterns(
+  html: string,
+  base: URL,
+  push: (href: string | undefined) => void,
+  patterns: RegExp[],
+) {
+  for (const re of patterns) {
+    for (const m of html.matchAll(re)) {
+      push(m[1]);
+    }
+  }
 }
 
 export function extractCatalogProductLinks(
@@ -34,7 +44,6 @@ export function extractCatalogProductLinks(
   }
 
   const found = new Set<string>();
-  /** Prefer SEO .html URLs when we also see /catalog/product/view/id/N */
   const byProductId = new Map<string, string>();
 
   const push = (href: string | undefined) => {
@@ -50,16 +59,19 @@ export function extractCatalogProductLinks(
     const host = absolute.hostname.toLowerCase();
     const path = absolute.pathname;
     absolute.hash = "";
-    absolute.search = "";
+    // Garder _nkw etc. hors eBay item ; pour itm on nettoie
+    if (/\/itm\//i.test(path)) {
+      absolute.search = "";
+    }
 
     // eBay item
-    const itm = path.match(/\/itm\/(\d+)/i);
+    const itm = path.match(/\/itm\/(?:[^/]+\/)?(\d+)/i);
     if (itm && /ebay\./i.test(host)) {
       found.add(`${absolute.origin}/itm/${itm[1]}`);
       return;
     }
 
-    // Shopify / boutique product
+    // Shopify
     const product = path.match(/\/products\/([^/?#]+)/i);
     if (product) {
       found.add(`${absolute.origin}/products/${product[1]}`);
@@ -85,7 +97,7 @@ export function extractCatalogProductLinks(
       return;
     }
 
-    // Magento / Utopya SEO product: /slug-produit.html (single path segment)
+    // Magento SEO product: /slug-produit.html (single segment)
     if (
       host === base.hostname.toLowerCase() &&
       /\.html$/i.test(path) &&
@@ -95,37 +107,41 @@ export function extractCatalogProductLinks(
     }
   };
 
-  // Priorité Magento : liens produit de la grille (évite le menu)
-  const magentoLinkPatterns = [
+  // Grilles produit Magento / thèmes courants
+  collectFromPatterns(html, base, push, [
     /<a\b[^>]*class="[^"]*product-item-link[^"]*"[^>]*href=["']([^"']+)["']/gi,
     /<a\b[^>]*href=["']([^"']+)["'][^>]*class="[^"]*product-item-link[^"]*"/gi,
     /<a\b[^>]*class="[^"]*product-item-photo[^"]*"[^>]*href=["']([^"']+)["']/gi,
     /<a\b[^>]*href=["']([^"']+)["'][^>]*class="[^"]*product(?:-item)?-photo[^"]*"/gi,
-  ];
-  for (const re of magentoLinkPatterns) {
-    for (const m of html.matchAll(re)) {
-      push(m[1]);
-    }
+    /<a\b[^>]*class="[^"]*s-item__link[^"]*"[^>]*href=["']([^"']+)["']/gi,
+    /<a\b[^>]*href=["']([^"']+)["'][^>]*class="[^"]*s-item__link[^"]*"/gi,
+    /data-(?:product-url|url)=["']([^"']+)["']/gi,
+  ]);
+
+  // data-sku + surrounding href (Utopya listing-item)
+  for (const m of html.matchAll(
+    /class="[^"]*product-item[^"]*"[^>]*>[\s\S]{0,1200}?<a\b[^>]*href=["']([^"']+)["']/gi,
+  )) {
+    push(m[1]);
   }
 
   for (const m of html.matchAll(/<a[^>]+href=["']([^"']+)["']/gi)) {
     push(m[1]);
-    if (found.size >= max * 4) break;
+    if (found.size >= max * 5) break;
   }
 
-  // JSON embedded product URLs (Shopify collections often include these)
   for (const m of html.matchAll(
-    /"(?:url|permalink|productUrl|href)"\s*:\s*"(https?:[^"]+\/(?:products|itm|catalog\/product)\/[^"]+)"/gi,
+    /"(?:url|permalink|productUrl|href|itemUrl)"\s*:\s*"(https?:[^"]+\/(?:products|itm|catalog\/product)\/[^"]+)"/gi,
   )) {
     push(m[1]);
   }
   for (const m of html.matchAll(
-    /"(?:url|permalink)"\s*:\s*"(\/products\/[^"]+)"/gi,
+    /"(?:url|permalink)"\s*:\s*"(\/(?:products|itm)\/[^"]+)"/gi,
   )) {
     push(m[1]);
   }
 
-  // Si on a des product-item-link Magento, privilégier ceux-là (plus fiables)
+  // Priorité : liens de grille Magento si présents
   const magentoPreferred: string[] = [];
   for (const re of [
     /<a\b[^>]*class="[^"]*product-item-link[^"]*"[^>]*href=["']([^"']+)["']/gi,
@@ -146,10 +162,15 @@ export function extractCatalogProductLinks(
   }
 
   if (magentoPreferred.length > 0) {
-    const uniq = [...new Set(magentoPreferred)].filter(
-      (u) => !u.endsWith("#") && !u.includes("/catalog/category/"),
-    );
-    return uniq.slice(0, max);
+    return [...new Set(magentoPreferred)]
+      .filter((u) => !u.endsWith("#") && !u.includes("/catalog/category/"))
+      .slice(0, max);
+  }
+
+  // Priorité eBay : uniquement /itm/
+  const ebayItems = [...found].filter((u) => /\/itm\/\d+/i.test(u));
+  if (ebayItems.length > 0 && /ebay\./i.test(base.hostname)) {
+    return ebayItems.slice(0, max);
   }
 
   return [...found].slice(0, max);

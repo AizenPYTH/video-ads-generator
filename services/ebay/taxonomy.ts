@@ -91,7 +91,11 @@ type ConditionPoliciesResponse = {
 };
 
 let cachedTreeId: string | null = null;
-let cachedAppToken: { token: string; expiresAt: number } | null = null;
+let cachedAppToken: { token: string; expiresAt: number; apiHost: string } | null =
+  null;
+
+const PROD_API = "https://api.ebay.com";
+const SANDBOX_API = "https://api.sandbox.ebay.com";
 
 /** Invalide le cache Taxonomy (Relancer la détection). */
 export function clearTaxonomyCache(): void {
@@ -106,7 +110,61 @@ function hasEbayCredentials(): boolean {
   );
 }
 
-async function getApplicationAccessToken(): Promise<string> {
+function tokenUrlForApiHost(apiHost: string): string {
+  return `${apiHost.replace(/\/$/, "")}/identity/v1/oauth2/token`;
+}
+
+/** Ordre de tentative : URL configurée, puis production, puis sandbox. */
+function candidateApiHosts(): string[] {
+  const configured = getEbayApiUrl().replace(/\/$/, "");
+  const preferred =
+    process.env.EBAY_ENVIRONMENT === "production" ? PROD_API : SANDBOX_API;
+  return [...new Set([configured, preferred, PROD_API, SANDBOX_API])];
+}
+
+async function requestAppToken(
+  apiHost: string,
+): Promise<{ token: string; expiresIn: number } | null> {
+  const clientId = process.env.EBAY_CLIENT_ID!.trim();
+  const clientSecret = process.env.EBAY_CLIENT_SECRET!.trim();
+  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString(
+    "base64",
+  );
+  const body = new URLSearchParams({
+    grant_type: "client_credentials",
+    scope: "https://api.ebay.com/oauth/api_scope",
+  });
+
+  const response = await fetch(tokenUrlForApiHost(apiHost), {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${credentials}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body,
+    signal: AbortSignal.timeout(20_000),
+  });
+
+  if (!response.ok) {
+    console.warn("[ebay-taxonomy] app token failed", {
+      apiHost,
+      status: response.status,
+    });
+    return null;
+  }
+
+  const data = (await response.json()) as {
+    access_token?: string;
+    expires_in?: number;
+  };
+  if (!data.access_token) return null;
+  return { token: data.access_token, expiresIn: data.expires_in ?? 7200 };
+}
+
+async function getApplicationAccessToken(): Promise<{
+  token: string;
+  apiHost: string;
+}> {
   if (isEbayMockMode()) {
     throw AppError.internal(
       "Mode mock eBay actif (EBAY_MOCK_MODE=true) — Taxonomy désactivée.",
@@ -119,74 +177,51 @@ async function getApplicationAccessToken(): Promise<string> {
   }
 
   if (cachedAppToken && cachedAppToken.expiresAt > Date.now() + 60_000) {
-    return cachedAppToken.token;
+    return { token: cachedAppToken.token, apiHost: cachedAppToken.apiHost };
   }
 
-  const clientId = process.env.EBAY_CLIENT_ID!.trim();
-  const clientSecret = process.env.EBAY_CLIENT_SECRET!.trim();
-
-  const authUrl =
-    process.env.EBAY_ENVIRONMENT === "production"
-      ? "https://api.ebay.com/identity/v1/oauth2/token"
-      : "https://api.sandbox.ebay.com/identity/v1/oauth2/token";
-
-  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString(
-    "base64",
-  );
-  const body = new URLSearchParams({
-    grant_type: "client_credentials",
-    scope: "https://api.ebay.com/oauth/api_scope",
-  });
-
-  const response = await fetch(authUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${credentials}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body,
-    signal: AbortSignal.timeout(20_000),
-  });
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    if (response.status === 401) {
-      throw AppError.internal(
-        "Token eBay refusé (401) : identifiants invalides ou environnement incorrect (sandbox vs production).",
-      );
+  let lastStatus: number | null = null;
+  for (const apiHost of candidateApiHosts()) {
+    try {
+      const result = await requestAppToken(apiHost);
+      if (result) {
+        cachedAppToken = {
+          token: result.token,
+          expiresAt: Date.now() + result.expiresIn * 1000,
+          apiHost,
+        };
+        console.info("[ebay-taxonomy] app token ok", { apiHost });
+        return { token: result.token, apiHost };
+      }
+      lastStatus = 401;
+    } catch (err) {
+      console.warn("[ebay-taxonomy] app token error", {
+        apiHost,
+        message: err instanceof Error ? err.message : "error",
+      });
     }
+  }
+
+  if (lastStatus === 401) {
     throw AppError.internal(
-      `Token eBay échoué HTTP ${response.status}${text ? ` — ${text.slice(0, 120)}` : ""}`,
+      "Token eBay refusé (401) : identifiants invalides ou environnement incorrect (sandbox vs production).",
     );
   }
-
-  const data = (await response.json()) as {
-    access_token: string;
-    expires_in: number;
-  };
-
-  if (!data.access_token) {
-    throw AppError.internal("Réponse token eBay invalide (access_token manquant).");
-  }
-
-  cachedAppToken = {
-    token: data.access_token,
-    expiresAt: Date.now() + data.expires_in * 1000,
-  };
-  return data.access_token;
+  throw AppError.internal("Impossible d'obtenir un token d'application eBay.");
 }
 
-function taxonomyClient(token: string): EbayClient {
+function taxonomyClient(token: string, apiHost: string): EbayClient {
   return new EbayClient({
     accessToken: token,
     marketplaceId: getEbayMarketplaceId(),
+    baseUrl: apiHost,
   });
 }
 
 export async function getEbayFrCategoryTreeId(): Promise<string> {
   if (cachedTreeId) return cachedTreeId;
-  const token = await getApplicationAccessToken();
-  const client = taxonomyClient(token);
+  const { token, apiHost } = await getApplicationAccessToken();
+  const client = taxonomyClient(token, apiHost);
   const marketplace = getEbayMarketplaceId();
   const data = await client.get<DefaultTreeResponse>(
     `/commerce/taxonomy/v1/get_default_category_tree_id?marketplace_id=${marketplace}`,
@@ -223,15 +258,16 @@ async function fetchSuggestionsRaw(
   const q = query.trim().slice(0, 350);
   if (!q) return [];
 
-  const token = await getApplicationAccessToken();
+  const { token, apiHost } = await getApplicationAccessToken();
   const treeId = await getEbayFrCategoryTreeId();
-  const client = taxonomyClient(token);
+  const client = taxonomyClient(token, apiHost);
   const path = `/commerce/taxonomy/v1/category_tree/${treeId}/get_category_suggestions?q=${encodeURIComponent(q)}`;
 
   console.info("[taxonomy] query", {
     q,
     treeId,
     marketplace: getEbayMarketplaceId(),
+    apiHost,
     env: process.env.EBAY_ENVIRONMENT ?? "sandbox",
   });
 
@@ -444,9 +480,9 @@ export async function getItemAspectsForCategory(
 ): Promise<CategoryAspect[]> {
   if (isEbayMockMode() || !hasEbayCredentials()) return [];
 
-  const token = await getApplicationAccessToken();
+  const { token, apiHost } = await getApplicationAccessToken();
   const treeId = await getEbayFrCategoryTreeId();
-  const client = taxonomyClient(token);
+  const client = taxonomyClient(token, apiHost);
 
   const data = await client.get<AspectsResponse>(
     `/commerce/taxonomy/v1/category_tree/${treeId}/get_item_aspects_for_category?category_id=${encodeURIComponent(categoryId)}`,
@@ -467,9 +503,9 @@ export async function getConditionPoliciesForCategory(
     return [];
   }
 
-  const token = await getApplicationAccessToken();
+  const { token, apiHost } = await getApplicationAccessToken();
   const marketplace = getEbayMarketplaceId();
-  const client = taxonomyClient(token);
+  const client = taxonomyClient(token, apiHost);
 
   const data = await client.get<ConditionPoliciesResponse>(
     `/sell/metadata/v1/marketplace/${marketplace}/get_item_condition_policies?category_ids=${encodeURIComponent(categoryId)}`,
@@ -490,9 +526,9 @@ export async function validateCategoryId(
   if (isEbayMockMode() || !hasEbayCredentials()) return { valid: false };
 
   try {
-    const token = await getApplicationAccessToken();
+    const { token, apiHost } = await getApplicationAccessToken();
     const treeId = await getEbayFrCategoryTreeId();
-    const url = `${getEbayApiUrl()}/commerce/taxonomy/v1/category_tree/${treeId}/get_category_subtree?category_id=${encodeURIComponent(categoryId)}`;
+    const url = `${apiHost}/commerce/taxonomy/v1/category_tree/${treeId}/get_category_subtree?category_id=${encodeURIComponent(categoryId)}`;
     const response = await fetch(url, {
       headers: {
         Authorization: `Bearer ${token}`,

@@ -62,7 +62,7 @@ export function normalizeImageUrl(raw: string): string {
     .replace(/([?&])(w|h|width|height)=\d+/gi, "");
 }
 
-/** Clé de dédup : ID Amazon ou URL sans query. */
+/** Clé de dédup : ID Amazon, fichier Magento (hors cache), ou URL sans query. */
 export function imageDedupeKey(raw: string): string {
   const normalized = normalizeImageUrl(raw);
   const amazonId = normalized.match(
@@ -71,6 +71,27 @@ export function imageDedupeKey(raw: string): string {
   if (amazonId?.[1]) {
     return `amz:${amazonId[1].replace(/\._[A-Z0-9,_]+_$/i, "").toLowerCase()}`;
   }
+
+  // Magento / Utopya : même produit sous /cache/<hash>/…/fichier.jpg
+  const magentoFile = normalized.match(
+    /\/(?:catalog\/product|media)\/(?:cache\/[a-f0-9]+\/)?(?:\d\/\d\/)?([a-z0-9._-]+\.(?:jpe?g|png|webp|gif))/i,
+  );
+  if (magentoFile?.[1]) {
+    return `file:${magentoFile[1].toLowerCase()}`;
+  }
+
+  const basename = normalized.match(
+    /\/([a-z0-9._-]{6,}\.(?:jpe?g|png|webp|gif))(?:\?|$)/i,
+  );
+  if (basename?.[1] && !/logo|icon|sprite|placeholder/i.test(basename[1])) {
+    try {
+      const host = new URL(normalized).hostname.toLowerCase();
+      return `file:${host}:${basename[1].toLowerCase()}`;
+    } catch {
+      return `file:${basename[1].toLowerCase()}`;
+    }
+  }
+
   return normalized.toLowerCase().replace(/\/$/, "");
 }
 
