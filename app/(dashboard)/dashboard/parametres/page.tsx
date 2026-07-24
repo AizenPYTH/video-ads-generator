@@ -109,9 +109,10 @@ async function SettingsContent() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Images marketing</CardTitle>
+            <CardTitle>Cadre d’annonce</CardTitle>
             <CardDescription>
-              Identité visuelle appliquée à vos supports produits.
+              Définissez le cadre de votre entreprise, puis appliquez-le depuis
+              chaque annonce.
             </CardDescription>
           </CardHeader>
           <CardContent>

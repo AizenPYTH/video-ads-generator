@@ -155,15 +155,41 @@ async function downloadImageBuffer(image: Buffer | string): Promise<Buffer> {
 
 async function runVisionOnBase64(content: string): Promise<OcrResult> {
   const client = getVisionClient();
-  const [result] = await client.documentTextDetection({
+
+  const [docResult] = await client.documentTextDetection({
     image: { content },
   });
-  const fullText = result.fullTextAnnotation?.text?.trim() ?? "";
-  const blocks =
-    result.textAnnotations?.slice(1).map((annotation) => ({
+
+  if (docResult.error?.message) {
+    console.warn("[vision] documentTextDetection", docResult.error.message);
+  }
+
+  let fullText = docResult.fullTextAnnotation?.text?.trim() ?? "";
+  let blocks =
+    docResult.textAnnotations?.slice(1).map((annotation) => ({
       text: annotation.description ?? "",
       confidence: 1,
     })) ?? [];
+
+  // Fallback TEXT_DETECTION si document vide (souvent mieux sur images marketing)
+  if (!fullText) {
+    const [textResult] = await client.textDetection({
+      image: { content },
+    });
+    if (textResult.error?.message) {
+      console.warn("[vision] textDetection", textResult.error.message);
+    }
+    fullText =
+      textResult.fullTextAnnotation?.text?.trim() ||
+      textResult.textAnnotations?.[0]?.description?.trim() ||
+      "";
+    blocks =
+      textResult.textAnnotations?.slice(1).map((annotation) => ({
+        text: annotation.description ?? "",
+        confidence: 1,
+      })) ?? [];
+  }
+
   return { fullText, blocks };
 }
 

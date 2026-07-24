@@ -6,6 +6,13 @@ import { searchReference } from "@/services/reference-search/serpapi";
 import { getOpenAIClient, getOpenAIModel } from "@/services/ai/openai-client";
 import type { IdentificationResult } from "@/types/identification";
 import { validateCoherence } from "./coherence-validator";
+import {
+  buildAdTitleFromAnalysis,
+  buildItemSpecificsFromIdentification,
+  enrichIdentificationFromOcr,
+} from "./build-listing-from-analysis";
+import { prepareProductImages } from "@/lib/images/dedupe";
+import { ensureRemoteImagesOnAd } from "@/features/ads/ensure-ad-images";
 
 export type PhotoAnalysisInput = {
   userId: string;
@@ -28,11 +35,15 @@ function buildIdentificationPrompt(
   notes?: string,
 ): string {
   return [
-    "You are an expert product identification assistant for eBay France sellers.",
-    "You may receive a product photo AND OCR text. CRITICAL RULE:",
-    "Explicit OCR text always takes priority over visual guesswork when they conflict.",
-    "Use the image to confirm layout, logos, and context; never invent part numbers that contradict OCR.",
-    "Analyze OCR text, reference numbers, web search results, seller notes, and the image if provided.",
+    "You are an expert product identification assistant for eBay France sellers of electronics spare parts.",
+    "You receive a product PHOTO (often a marketing / wholesale listing image) AND OCR text extracted from it.",
+    "CRITICAL RULES:",
+    "1) Explicit OCR text ALWAYS takes priority over visual guesswork.",
+    "2) Marketing images often show the product name in large red/black text (e.g. 'A1706 Motherboard', 'With Touch ID', '2016 2017 Year'). You MUST use that text.",
+    "3) Never return all-null fields when OCR clearly contains a model (A1706), product type (Motherboard), or years.",
+    "4) For Apple MacBook logic boards: compatibility.brand=Apple, compatibility.modelNumber=Axxxx, soldItem.type=Carte mère / Logic Board, soldItem.isReplacementPart=true.",
+    "5) soldItem.name must be a clear French eBay-ready title when possible (max ~80 chars), e.g. 'Carte mère A1706 MacBook Pro avec Touch ID'.",
+    "6) Do NOT invent PCB part numbers that are not in OCR/search. Model numbers like A1706 from OCR are valid.",
     "Return a JSON object matching this exact schema:",
     JSON.stringify({
       soldItem: {
@@ -71,7 +82,7 @@ function buildIdentificationPrompt(
       needsReview: "boolean",
     }),
     "",
-    `OCR text (PRIORITY):\n${ocrText || "(empty)"}`,
+    `OCR text (PRIORITY — use every useful token):\n${ocrText || "(empty)"}`,
     reference ? `Best reference found: ${reference}` : "",
     serpContext ? `Web search context:\n${serpContext}` : "",
     notes ? `Seller notes: ${notes}` : "",
@@ -221,6 +232,9 @@ export async function runPhotoAnalysisPipeline(
       input.photoUrls[0],
     );
 
+    // Si OpenAI renvoie quasi-vide, reconstruire depuis l’OCR marketing
+    result = enrichIdentificationFromOcr(result, ocrText);
+
     const coherence = validateCoherence({
       result,
       ocrText,
@@ -228,6 +242,23 @@ export async function runPhotoAnalysisPipeline(
       notes: input.notes,
     });
     result = coherence.result;
+
+    console.info("[photo-analysis]", {
+      ocrLen: ocrText.length,
+      ocrPreview: ocrText.slice(0, 160).replace(/\s+/g, " "),
+      reference,
+      title: result.soldItem?.name,
+      model: result.model ?? result.compatibility?.modelNumber,
+      type: result.soldItem?.type,
+      confidence: result.confidence.global,
+    });
+
+    if (!ocrText.trim() && !result.soldItem?.name && !result.model) {
+      result.warnings.push(
+        "Aucun texte OCR détecté sur les photos — complétez le titre manuellement.",
+      );
+      result.needsReview = true;
+    }
 
     const { data: analyzedProduct, error: productError } = await supabase
       .from("analyzed_products")
@@ -342,40 +373,119 @@ export async function runPhotoAnalysisPipeline(
           ? (existingAd.metadata as Record<string, unknown>)
           : {};
 
+      const builtTitle = buildAdTitleFromAnalysis(result, ocrText);
+      const titre =
+        (existingAd?.titre && String(existingAd.titre).trim()) || builtTitle;
+      const sku =
+        (existingAd?.sku && String(existingAd.sku).trim()) ||
+        result.partNumber ||
+        result.compatibility?.modelNumber ||
+        result.model ||
+        null;
+      const itemSpecifics = buildItemSpecificsFromIdentification(result);
+      const descriptionParts = [
+        result.soldItem?.name,
+        result.soldItem?.type
+          ? `Type : ${result.soldItem.type}`
+          : null,
+        result.compatibility?.brand || result.compatibility?.device
+          ? `Compatibilité : ${[result.compatibility?.brand, result.compatibility?.device, result.compatibility?.modelNumber].filter(Boolean).join(" ")}`
+          : null,
+        result.partNumber ? `Référence : ${result.partNumber}` : null,
+        ocrText.trim()
+          ? `Texte détecté sur la photo :\n${ocrText.trim().slice(0, 1500)}`
+          : null,
+      ].filter(Boolean);
+      const description =
+        (existingAd?.description && String(existingAd.description).trim()) ||
+        descriptionParts.join("\n\n") ||
+        null;
+
       const { recalculateAdStatus } = await import(
         "@/features/ads/recalculate-status"
       );
       const statut = result.needsReview
         ? "NEEDS_REVIEW"
         : recalculateAdStatus({
-            titre: existingAd?.titre,
-            description: existingAd?.description,
+            titre,
+            description,
             prix_vente: existingAd?.prix_vente,
-            quantite: existingAd?.quantite,
-            sku: existingAd?.sku,
+            quantite: existingAd?.quantite ?? 1,
+            sku,
             ebay_condition_id: existingAd?.ebay_condition_id
               ? String(existingAd.ebay_condition_id)
-              : null,
+              : "1000",
             ebay_category_id: ebayCategoryId,
             categoryStatus,
             categoryAmbiguous: categoryStatus === "needs_review",
             categoryConfidence,
           });
 
-      await supabase
+      const { error: adUpdateError } = await supabase
         .from("ads")
         .update({
+          titre,
+          title: titre,
+          description,
+          sku,
+          ebay_condition_id:
+            existingAd?.ebay_condition_id != null
+              ? String(existingAd.ebay_condition_id)
+              : "1000",
           resultat_identification: result,
           ebay_category_id: ebayCategoryId,
           statut,
           metadata: {
             ...prevMeta,
             ...categoryMeta,
+            source: "photo_analysis",
+            ocr_text: ocrText.slice(0, 4000),
+            ocr_reference: reference,
+            brand: result.brand,
+            model: result.model,
+            mpn: result.partNumber,
+            type: result.soldItem?.type,
+            product_type: result.soldItem?.type ?? result.category,
+            compatible_brand: result.compatibility?.brand,
+            compatible_device: result.compatibility?.device,
+            compatible_model: result.compatibility?.modelNumber,
+            item_specifics: itemSpecifics,
+            photo_urls: input.photoUrls,
+            images: input.photoUrls,
           },
           updated_at: new Date().toISOString(),
         })
         .eq("id", input.adId)
         .eq("user_id", input.userId);
+
+      if (adUpdateError) {
+        console.error("[photo-analysis] ad update failed", adUpdateError.message);
+        throw AppError.internal(
+          `Impossible de sauvegarder l'annonce: ${adUpdateError.message}`,
+          adUpdateError,
+        );
+      }
+
+      // Attacher les photos analysées à l’annonce (sinon fiche vide)
+      try {
+        const prepared = await prepareProductImages(input.photoUrls, {
+          max: 8,
+          contentHash: false,
+        });
+        if (prepared.images.length > 0) {
+          await ensureRemoteImagesOnAd({
+            userId: input.userId,
+            adId: input.adId,
+            preparedImages: prepared.images,
+            replace: false,
+          });
+        }
+      } catch (imgErr) {
+        console.warn(
+          "[photo-analysis] image attach failed",
+          imgErr instanceof Error ? imgErr.message : imgErr,
+        );
+      }
     }
 
     return {

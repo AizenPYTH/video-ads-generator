@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { AdStatus } from "@/types/ads";
 import type { IdentificationResult } from "@/types/identification";
 import { fetchAdById } from "./queries";
+import { formatPriceForStorage } from "@/lib/scraping/parse-price";
 
 export type AdActionResult<T = void> = {
   error?: string;
@@ -146,6 +147,8 @@ export async function updateAd(
     notes?: string | null;
     resultat_identification?: IdentificationResult | null;
     statut?: AdStatus;
+    /** Caractéristiques eBay (Couleur, Marque…) → metadata.item_specifics */
+    item_specifics?: Record<string, string>;
   },
 ): Promise<AdActionResult> {
   try {
@@ -168,6 +171,10 @@ export async function updateAd(
         ? (meta.category_resolution as {
             status?: string;
             confidence?: number;
+            categoryId?: string;
+            missingAspects?: string[];
+            message?: string;
+            [key: string]: unknown;
           })
         : null;
 
@@ -175,6 +182,13 @@ export async function updateAd(
       if (value == null) return null;
       const text = String(value).trim();
       return text.length ? text : null;
+    };
+
+    const toNullablePrice = (value: unknown): string | null => {
+      if (value === undefined) return toNullableString(existing.prix_vente);
+      if (value == null || String(value).trim() === "") return null;
+      // Normalise 12 / 12,50 / "12.00" → "12.00" ; refuse 0
+      return formatPriceForStorage(value);
     };
 
     const next = {
@@ -188,7 +202,7 @@ export async function updateAd(
           : toNullableString(existing.description),
       prix_vente:
         input.prix_vente !== undefined
-          ? toNullableString(input.prix_vente)
+          ? toNullablePrice(input.prix_vente)
           : toNullableString(existing.prix_vente),
       quantite:
         input.quantite !== undefined
@@ -208,22 +222,111 @@ export async function updateAd(
           : toNullableString(existing.ebay_condition_id),
     };
 
+    let nextMeta = meta;
+    let nextCategoryStatus = categoryResolution?.status ?? null;
+    let nextCategoryAmbiguous =
+      categoryResolution?.status === "needs_review";
+    let nextCategoryConfidence =
+      typeof categoryResolution?.confidence === "number"
+        ? categoryResolution.confidence
+        : null;
+
+    if (input.item_specifics !== undefined) {
+      const previousSpecifics =
+        meta.item_specifics && typeof meta.item_specifics === "object"
+          ? (meta.item_specifics as Record<string, string>)
+          : {};
+
+      const mergedSpecifics: Record<string, string> = { ...previousSpecifics };
+      for (const [key, raw] of Object.entries(input.item_specifics)) {
+        const name = key.trim();
+        if (!name) continue;
+        const value = String(raw ?? "").trim();
+        const existingKey = Object.keys(mergedSpecifics).find(
+          (k) => k.toLowerCase() === name.toLowerCase(),
+        );
+        if (existingKey) delete mergedSpecifics[existingKey];
+        if (value) mergedSpecifics[name] = value;
+      }
+
+      let missingAspects: string[] = Array.isArray(
+        categoryResolution?.missingAspects,
+      )
+        ? [...categoryResolution.missingAspects]
+        : [];
+
+      const categoryId =
+        next.ebay_category_id ||
+        (typeof categoryResolution?.categoryId === "string"
+          ? categoryResolution.categoryId
+          : null);
+
+      if (categoryId) {
+        try {
+          const { getItemAspectsForCategory } = await import(
+            "@/services/ebay/taxonomy"
+          );
+          const aspects = await getItemAspectsForCategory(categoryId);
+          missingAspects = aspects
+            .filter((a) => a.required)
+            .map((a) => a.name)
+            .filter((name) => {
+              const key = name.toLowerCase();
+              return !Object.entries(mergedSpecifics).some(
+                ([k, v]) => k.toLowerCase() === key && Boolean(v?.trim()),
+              );
+            });
+        } catch (err) {
+          console.warn("[ad-update] aspects refresh failed", err);
+          missingAspects = missingAspects.filter((name) => {
+            const key = name.toLowerCase();
+            return !Object.entries(mergedSpecifics).some(
+              ([k, v]) => k.toLowerCase() === key && Boolean(v?.trim()),
+            );
+          });
+        }
+      } else {
+        missingAspects = missingAspects.filter((name) => {
+          const key = name.toLowerCase();
+          return !Object.entries(mergedSpecifics).some(
+            ([k, v]) => k.toLowerCase() === key && Boolean(v?.trim()),
+          );
+        });
+      }
+
+      const needsReview = missingAspects.length > 0;
+      nextCategoryStatus = needsReview ? "needs_review" : "resolved";
+      nextCategoryAmbiguous = needsReview;
+      if (!needsReview) nextCategoryConfidence = 0.94;
+
+      nextMeta = {
+        ...meta,
+        item_specifics: mergedSpecifics,
+        category_resolution: {
+          ...(categoryResolution ?? {}),
+          status: nextCategoryStatus,
+          missingAspects,
+          message: needsReview
+            ? `Champs eBay manquants : ${missingAspects.join(", ")}`
+            : undefined,
+        },
+      };
+    }
+
     const computedStatut =
       input.statut ??
       recalculateAdStatus({
         ...next,
-        categoryStatus: categoryResolution?.status ?? null,
-        categoryAmbiguous: categoryResolution?.status === "needs_review",
-        categoryConfidence:
-          typeof categoryResolution?.confidence === "number"
-            ? categoryResolution.confidence
-            : null,
+        categoryStatus: nextCategoryStatus,
+        categoryAmbiguous: nextCategoryAmbiguous,
+        categoryConfidence: nextCategoryConfidence,
       });
 
     console.info("[ad-update] status", {
       adId,
       old: existing.statut,
       new: computedStatut,
+      specificsUpdated: input.item_specifics !== undefined,
     });
 
     const { error } = await supabase
@@ -245,6 +348,7 @@ export async function updateAd(
         ...(input.prix_achat !== undefined
           ? { prix_achat: toNullableString(input.prix_achat) }
           : {}),
+        ...(input.item_specifics !== undefined ? { metadata: nextMeta } : {}),
         statut: computedStatut,
         status: computedStatut === "READY" ? "ready" : "draft",
         updated_at: new Date().toISOString(),

@@ -39,8 +39,12 @@ import {
   previewMarketingImage,
   commitMarketingImage,
 } from "@/features/marketing-images/actions";
-import { APP_NAME } from "@/lib/brand";
 import type { AdValidationResult } from "@/features/ads/validation";
+import {
+  formatPriceForStorage,
+  parseFrenchPrice,
+  PRICE_NOT_DETECTED_MESSAGE,
+} from "@/lib/scraping/parse-price";
 
 type CategoryResolution = {
   status?: string;
@@ -82,6 +86,28 @@ type Props = {
   ebayListingId?: string | null;
   ebayListingUrl?: string | null;
   ebaySellerListingsUrl?: string | null;
+  priceWarning?: string | null;
+  identification?: {
+    soldItem?: { type?: string | null; name?: string | null } | null;
+    brand?: string | null;
+    model?: string | null;
+    partNumber?: string | null;
+    compatibility?: {
+      brand?: string | null;
+      device?: string | null;
+      modelNumber?: string | null;
+    } | null;
+    confidence?: { global?: number } | null;
+    warnings?: string[] | null;
+    needsReview?: boolean;
+  } | null;
+  /** Caractéristiques eBay éditables (Couleur, Marque…) */
+  aspectFields?: Array<{
+    name: string;
+    required: boolean;
+    values: string[];
+    value: string;
+  }>;
   /** @deprecated non affiché aux utilisateurs */
   isSandbox?: boolean;
 };
@@ -96,6 +122,9 @@ export function AdDetailEditor({
   ebayListingId: _ebayListingId,
   ebayListingUrl,
   ebaySellerListingsUrl,
+  priceWarning,
+  identification,
+  aspectFields: initialAspectFields = [],
 }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -103,6 +132,12 @@ export function AdDetailEditor({
 
   const [titre, setTitre] = useState(() => asText(initial.titre));
   const [prix, setPrix] = useState(() => asText(initial.prix_vente));
+  const [aspectValues, setAspectValues] = useState<Record<string, string>>(
+    () =>
+      Object.fromEntries(
+        initialAspectFields.map((f) => [f.name, asText(f.value)]),
+      ),
+  );
   const [images, setImages] = useState<EditorAdImage[]>(() =>
     [...initialImages].sort((a, b) => a.ordre - b.ordre),
   );
@@ -115,12 +150,24 @@ export function AdDetailEditor({
   }, [initial.titre, initial.prix_vente]);
 
   useEffect(() => {
+    setAspectValues(
+      Object.fromEntries(
+        initialAspectFields.map((f) => [f.name, asText(f.value)]),
+      ),
+    );
+  }, [initialAspectFields]);
+
+  useEffect(() => {
     setImages([...initialImages].sort((a, b) => a.ordre - b.ordre));
   }, [initialImages]);
 
-  const priceMissing = !prix || Number(prix) <= 0;
+  const parsedPrice = parseFrenchPrice(prix);
+  const priceMissing = parsedPrice == null;
   const primary =
     images.find((i) => i.est_principale) ?? images[0] ?? null;
+  const missingAspectNames = initialAspectFields
+    .filter((f) => f.required && !asText(aspectValues[f.name]).trim())
+    .map((f) => f.name);
 
   useEffect(() => {
     if (priceMissing) priceRef.current?.focus();
@@ -142,10 +189,10 @@ export function AdDetailEditor({
       });
     }
 
-    if (!priceText || Number(priceText) <= 0) {
+    if (!priceText || parseFrenchPrice(priceText) == null) {
       errors.push({
         field: "prix_vente",
-        message: "Le prix de vente est obligatoire.",
+        message: "Le prix de vente doit être supérieur à 0.",
       });
     }
 
@@ -158,12 +205,23 @@ export function AdDetailEditor({
       });
     }
 
+    for (const name of missingAspectNames) {
+      errors.push({
+        field: `aspect:${name}`,
+        message: `Le champ « ${name} » est obligatoire.`,
+      });
+    }
+
     return {
       valid: errors.length === 0,
       errors,
       warnings: validation.warnings ?? [],
     };
-  }, [validation, titre, prix, images]);
+  }, [validation, titre, prix, images, missingAspectNames]);
+
+  function setAspectValue(name: string, value: string) {
+    setAspectValues((prev) => ({ ...prev, [name]: value }));
+  }
 
   function runAction(action: string, task: () => Promise<void>) {
     setPendingAction(action);
@@ -182,17 +240,29 @@ export function AdDetailEditor({
     });
   }
 
+  async function persistCurrentFields(): Promise<{ error?: string } | void> {
+    const normalizedPrice = formatPriceForStorage(prix);
+    if (asText(prix).trim() && normalizedPrice == null) {
+      return { error: "Prix invalide. Exemple : 12 ou 12,50" };
+    }
+
+    const result = await updateAd(adId, {
+      titre: asText(titre).trim() || null,
+      prix_vente: normalizedPrice,
+      description: asText(initial.description).trim() || null,
+      quantite: Math.max(1, Number(initial.quantite) || 1),
+      ebay_condition_id: asText(initial.ebay_condition_id).trim() || null,
+      sku: asText(initial.sku).trim() || null,
+      ebay_category_id: asText(initial.ebay_category_id).trim() || null,
+      item_specifics: aspectValues,
+    });
+    if (result?.error) return { error: result.error };
+    if (normalizedPrice) setPrix(normalizedPrice);
+  }
+
   function save() {
     runAction("save", async () => {
-      const result = await updateAd(adId, {
-        titre: asText(titre).trim() || null,
-        prix_vente: asText(prix).trim() || null,
-        description: asText(initial.description).trim() || null,
-        quantite: Math.max(1, Number(initial.quantite) || 1),
-        ebay_condition_id: asText(initial.ebay_condition_id).trim() || null,
-        sku: asText(initial.sku).trim() || null,
-        ebay_category_id: asText(initial.ebay_category_id).trim() || null,
-      });
+      const result = await persistCurrentFields();
       if (result?.error) {
         toast.error(result.error);
         return;
@@ -220,7 +290,7 @@ export function AdDetailEditor({
         price: asText(prix).trim() || undefined,
       });
       if (result.error || !result.data) {
-        toast.error(result.error ?? `Échec de la génération ${APP_NAME}.`);
+        toast.error(result.error ?? "Échec de la génération du cadre.");
         return;
       }
       setMarketingPreview(result.data.previewDataUrl);
@@ -250,7 +320,7 @@ export function AdDetailEditor({
         },
       ]);
       setMarketingPreview(null);
-      toast.success(`Image ${APP_NAME} ajoutée à l’annonce`);
+      toast.success("Cadre appliqué à l’annonce");
       router.refresh();
     });
   }
@@ -330,13 +400,21 @@ export function AdDetailEditor({
             <Input
               id="field-prix"
               ref={priceRef}
-              type="number"
-              min="0"
-              step="0.01"
+              inputMode="decimal"
+              placeholder="ex. 12 ou 12,50"
               value={prix}
               onChange={(e) => setPrix(e.target.value)}
+              onBlur={() => {
+                const normalized = formatPriceForStorage(prix);
+                if (normalized) setPrix(normalized);
+              }}
               className={priceMissing ? "border-amber-500" : undefined}
             />
+            {priceMissing ? (
+              <p className="text-sm text-amber-700 dark:text-amber-400">
+                {priceWarning?.trim() || PRICE_NOT_DETECTED_MESSAGE}
+              </p>
+            ) : null}
           </div>
           {resolution?.categoryName && (
             <p className="text-sm text-muted-foreground">
@@ -346,8 +424,104 @@ export function AdDetailEditor({
                 : ""}
             </p>
           )}
+          {missingAspectNames.length > 0 && (
+            <p className="text-sm text-amber-700 dark:text-amber-400">
+              À compléter : {missingAspectNames.join(", ")}
+            </p>
+          )}
+          {identification &&
+            (identification.soldItem?.name ||
+              identification.model ||
+              identification.partNumber ||
+              identification.soldItem?.type) && (
+              <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm space-y-1">
+                <p className="font-medium text-foreground">
+                  Identification photo
+                  {typeof identification.confidence?.global === "number"
+                    ? ` · ${Math.round(identification.confidence.global * 100)} %`
+                    : ""}
+                  {identification.needsReview ? " · à vérifier" : ""}
+                </p>
+                {identification.soldItem?.type ? (
+                  <p className="text-muted-foreground">
+                    Type : {identification.soldItem.type}
+                  </p>
+                ) : null}
+                {identification.model || identification.partNumber ? (
+                  <p className="text-muted-foreground">
+                    Modèle / réf. :{" "}
+                    {[identification.model, identification.partNumber]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                ) : null}
+                {identification.compatibility?.brand ||
+                identification.compatibility?.device ||
+                identification.compatibility?.modelNumber ? (
+                  <p className="text-muted-foreground">
+                    Compatibilité :{" "}
+                    {[
+                      identification.compatibility?.brand,
+                      identification.compatibility?.device,
+                      identification.compatibility?.modelNumber,
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                  </p>
+                ) : null}
+                {identification.warnings?.[0] ? (
+                  <p className="text-amber-700 dark:text-amber-400">
+                    {identification.warnings[0]}
+                  </p>
+                ) : null}
+              </div>
+            )}
         </CardContent>
       </Card>
+
+      {initialAspectFields.length > 0 && (
+        <Card className="shadow-xs">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">
+              Caractéristiques eBay
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 sm:grid-cols-2">
+            {initialAspectFields.map((field) => {
+              const value = aspectValues[field.name] ?? "";
+              const emptyRequired = field.required && !value.trim();
+              const listId = `aspect-suggestions-${field.name.replace(/\s+/g, "-")}`;
+              return (
+                <div key={field.name} className="space-y-2">
+                  <Label htmlFor={`aspect-${field.name}`}>
+                    {field.name}
+                    {field.required ? (
+                      <span className="text-destructive"> *</span>
+                    ) : null}
+                  </Label>
+                  <Input
+                    id={`aspect-${field.name}`}
+                    list={field.values.length > 0 ? listId : undefined}
+                    value={value}
+                    placeholder={
+                      emptyRequired ? `Renseigner ${field.name}` : undefined
+                    }
+                    onChange={(e) => setAspectValue(field.name, e.target.value)}
+                    className={emptyRequired ? "border-amber-500" : undefined}
+                  />
+                  {field.values.length > 0 ? (
+                    <datalist id={listId}>
+                      {field.values.map((v) => (
+                        <option key={v} value={v} />
+                      ))}
+                    </datalist>
+                  ) : null}
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="shadow-xs">
         <CardContent className="pt-6">
@@ -377,7 +551,7 @@ export function AdDetailEditor({
             ) : (
               <ImageIcon aria-hidden="true" />
             )}
-            Générer image {APP_NAME}
+            Générer avec mon cadre
           </Button>
           <Button onClick={save} disabled={pending}>
             {pendingAction === "save" ? (
@@ -391,6 +565,7 @@ export function AdDetailEditor({
             adId={adId}
             adTitle={asText(titre)}
             validation={publishValidation}
+            beforePublish={persistCurrentFields}
           />
         </CardContent>
       </Card>
@@ -403,7 +578,7 @@ export function AdDetailEditor({
       >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Aperçu image {APP_NAME}</DialogTitle>
+            <DialogTitle>Aperçu de mon cadre</DialogTitle>
             <DialogDescription>
               Validez pour ajouter cette image à l’annonce, ou annulez.
             </DialogDescription>
@@ -412,7 +587,7 @@ export function AdDetailEditor({
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={marketingPreview}
-              alt={`Aperçu ${APP_NAME}`}
+              alt="Aperçu cadre entreprise"
               className="mx-auto max-h-[min(52vh,420px)] w-auto max-w-full rounded-lg object-contain"
             />
           )}

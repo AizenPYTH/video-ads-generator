@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -21,21 +21,16 @@ import { getStatusLabel } from "@/features/ads/status";
 import { AdRowImageDrop } from "./ad-row-image-drop";
 import { AdsBulkToolbar } from "./ads-bulk-toolbar";
 import { BulkPublishDialog } from "./bulk-publish-dialog";
-import { BulkImageMatchDialog } from "./bulk-image-match-dialog";
 import {
   SaveStatusIndicator,
   type SaveStatus,
 } from "./save-status-indicator";
 import {
-  bulkApplyDefaultPoliciesFlag,
   bulkArchiveAds,
   bulkDeleteAds,
   bulkSetDraftAds,
   bulkUpdateAds,
 } from "@/features/ads/bulk-actions";
-import { bulkApplyMarketingFrame } from "@/features/marketing-images/actions";
-import { uploadImageWithPath } from "@/components/uploads/upload-image";
-import { addAdImages } from "@/features/ads/actions";
 import { cn } from "@/lib/utils";
 import type { AdStatus } from "@/types/ads";
 
@@ -66,13 +61,10 @@ export function AdsBulkBoard({ ads: initialAds }: Props) {
   const [pending, startTransition] = useTransition();
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [publishOpen, setPublishOpen] = useState(false);
-  const [matchOpen, setMatchOpen] = useState(false);
   const [priceOpen, setPriceOpen] = useState(false);
   const [bulkPrice, setBulkPrice] = useState("");
   const [bulkQty, setBulkQty] = useState("1");
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [commonBusy, setCommonBusy] = useState(false);
-  const commonInputRef = useRef<HTMLInputElement>(null);
 
   // Sync when server props change
   useEffect(() => {
@@ -124,35 +116,6 @@ export function AdsBulkBoard({ ads: initialAds }: Props) {
     });
   }
 
-  async function applyCommonImage(file: File) {
-    if (!selectedIds.length) return;
-    setCommonBusy(true);
-    let ok = 0;
-    let fail = 0;
-    for (const id of selectedIds) {
-      try {
-        const uploaded = await uploadImageWithPath(file, `ads/${id}`);
-        const result = await addAdImages(id, [
-          { url: uploaded.url, storagePath: uploaded.path },
-        ]);
-        if (result.error || !result.data?.[0]) {
-          fail += 1;
-          continue;
-        }
-        ok += 1;
-        patchLocal(id, {
-          imageUrl: result.data[0].url,
-          hasImage: true,
-        });
-      } catch {
-        fail += 1;
-      }
-    }
-    setCommonBusy(false);
-    toast.success(`${ok} image(s) ajoutée(s), ${fail} échec(s).`);
-    setSaveStatus("saved");
-  }
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -161,46 +124,9 @@ export function AdsBulkBoard({ ads: initialAds }: Props) {
 
       <AdsBulkToolbar
         selectedCount={selected.size}
-        disabled={pending || commonBusy}
+        disabled={pending}
         onPublish={() => setPublishOpen(true)}
         onEditPriceQty={() => setPriceOpen(true)}
-        onCommonImage={() => commonInputRef.current?.click()}
-        onMatchImages={() => setMatchOpen(true)}
-        onApplyMarketingFrame={() => {
-          startTransition(async () => {
-            toast.message("Application du cadre Snowwolf…", {
-              description: "Cela peut prendre quelques secondes par annonce.",
-            });
-            const r = await bulkApplyMarketingFrame(selectedIds);
-            if (r.error) {
-              toast.error(r.error);
-              return;
-            }
-            const ok = r.data?.successCount ?? 0;
-            const fail = r.data?.failCount ?? 0;
-            if (ok > 0) {
-              toast.success(
-                `${ok} cadre${ok > 1 ? "s" : ""} appliqué${ok > 1 ? "s" : ""}${
-                  fail ? ` · ${fail} échec${fail > 1 ? "s" : ""}` : ""
-                }.`,
-              );
-              router.refresh();
-            } else {
-              toast.error(
-                fail
-                  ? `Aucun cadre appliqué (${fail} échec${fail > 1 ? "s" : ""}). Vérifiez que chaque annonce a une image.`
-                  : "Aucun cadre appliqué.",
-              );
-            }
-          });
-        }}
-        onApplyPolicies={() => {
-          startTransition(async () => {
-            const r = await bulkApplyDefaultPoliciesFlag(selectedIds);
-            if (r.error) toast.error(r.error);
-            else toast.success("Politiques par défaut marquées.");
-          });
-        }}
         onDraft={() => {
           startTransition(async () => {
             const r = await bulkSetDraftAds(selectedIds);
@@ -226,18 +152,6 @@ export function AdsBulkBoard({ ads: initialAds }: Props) {
           });
         }}
         onDelete={() => setDeleteOpen(true)}
-      />
-
-      <input
-        ref={commonInputRef}
-        type="file"
-        accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
-        className="sr-only"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          e.target.value = "";
-          if (file) void applyCommonImage(file);
-        }}
       />
 
       {/* Desktop table */}
@@ -465,18 +379,6 @@ export function AdsBulkBoard({ ads: initialAds }: Props) {
         open={publishOpen}
         onOpenChange={setPublishOpen}
         adIds={selectedIds}
-        onDone={() => router.refresh()}
-      />
-
-      <BulkImageMatchDialog
-        open={matchOpen}
-        onOpenChange={setMatchOpen}
-        ads={ads.map((a) => ({
-          id: a.id,
-          titre: a.titre,
-          sku: a.sku,
-          mpn: a.mpn,
-        }))}
         onDone={() => router.refresh()}
       />
 

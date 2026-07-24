@@ -86,7 +86,8 @@ export default async function ImportDetailPage({ params }: PageProps) {
             {batch.nom_fichier}
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Retrouvez l’avancement et le résultat de chaque ligne.
+            Vous restez sur le détail de cet import : seules les lignes
+            importées ici sont listées ci-dessous.
           </p>
         </div>
         <Badge
@@ -169,12 +170,31 @@ export default async function ImportDetailPage({ params }: PageProps) {
       )}
 
       <div>
-        <div className="mb-4">
-          <h2 className="text-lg font-semibold">Résultat par ligne</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Deux blocs : annonces fiables (&gt; 90&nbsp;% de confiance) à publier
-            en sélection, et lignes à vérifier.
-          </p>
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">Résultat de cet import</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Uniquement les lignes de ce fichier — pas toute la liste « Mes
+              annonces ». Deux blocs : fiables (&gt; 90&nbsp;% de confiance) et à
+              vérifier.
+            </p>
+          </div>
+          {(() => {
+            const adIds = (rows ?? [])
+              .map((r) => r.ad_id)
+              .filter((id): id is string => Boolean(id));
+            if (adIds.length === 0) return null;
+            return (
+              <Button variant="outline" size="sm" asChild>
+                <Link
+                  href={`/dashboard/annonces?ids=${encodeURIComponent(adIds.join(","))}`}
+                >
+                  Voir ces {adIds.length} annonce
+                  {adIds.length > 1 ? "s" : ""} uniquement
+                </Link>
+              </Button>
+            );
+          })()}
         </div>
         {rows && rows.length > 0 ? (
           <ImportTable rows={rows} />

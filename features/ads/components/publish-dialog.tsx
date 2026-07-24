@@ -23,6 +23,8 @@ type PublishDialogProps = {
   validation: AdValidationResult;
   trigger?: React.ReactNode;
   onPublished?: () => void;
+  /** Persiste le prix/titre local avant lecture DB pour publish */
+  beforePublish?: () => Promise<{ error?: string } | void>;
   /** @deprecated conservé pour compat — non affiché aux utilisateurs */
   sandbox?: boolean;
 };
@@ -33,6 +35,7 @@ export function PublishDialog({
   validation,
   trigger,
   onPublished,
+  beforePublish,
 }: PublishDialogProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -45,30 +48,45 @@ export function PublishDialog({
     }
 
     setIsLoading(true);
-    const result = await publishAd(adId);
+    try {
+      if (beforePublish) {
+        const prep = await beforePublish();
+        if (prep && "error" in prep && prep.error) {
+          toast.error(prep.error);
+          return;
+        }
+      }
 
-    if (result.error) {
-      toast.error(result.error);
-    } else {
-      const listingUrl = result.data?.listingUrl;
-      const sellerUrl = result.data?.sellerListingsUrl;
-      toast.success(result.message ?? "Annonce publiée sur eBay.", {
-        duration: 12_000,
-        action:
-          listingUrl || sellerUrl
-            ? {
-                label: "Ouvrir eBay",
-                onClick: () => {
-                  window.open(listingUrl ?? sellerUrl!, "_blank", "noopener,noreferrer");
-                },
-              }
-            : undefined,
-      });
-      setOpen(false);
-      onPublished?.();
-      router.refresh();
+      const result = await publishAd(adId);
+
+      if (result.error) {
+        toast.error(result.error);
+      } else {
+        const listingUrl = result.data?.listingUrl;
+        const sellerUrl = result.data?.sellerListingsUrl;
+        toast.success(result.message ?? "Annonce publiée sur eBay.", {
+          duration: 12_000,
+          action:
+            listingUrl || sellerUrl
+              ? {
+                  label: "Ouvrir eBay",
+                  onClick: () => {
+                    window.open(
+                      listingUrl ?? sellerUrl!,
+                      "_blank",
+                      "noopener,noreferrer",
+                    );
+                  },
+                }
+              : undefined,
+        });
+        setOpen(false);
+        onPublished?.();
+        router.refresh();
+      }
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   }
 
   return (

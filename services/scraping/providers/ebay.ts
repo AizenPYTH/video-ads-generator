@@ -2,7 +2,11 @@ import { decodeHtmlEntities } from "@/lib/html/decode-entities";
 import { extractJsonLd } from "@/lib/scraping/json-ld";
 import { inferProductTypeFromTitle } from "@/lib/scraping/infer-product-type";
 import { fetchWithScrapingBee } from "../scrapingbee";
-import type { ProductPageProvider, ScrapedProduct } from "./base";
+import type {
+  ProductPageProvider,
+  ScrapedProduct,
+  ScrapeOptions,
+} from "./base";
 
 const EBAY_HOSTS = [
   "ebay.com",
@@ -25,15 +29,17 @@ export class EbayProductProvider implements ProductPageProvider {
     }
   }
 
-  async scrape(url: string): Promise<ScrapedProduct> {
+  async scrape(url: string, _options?: ScrapeOptions): Promise<ScrapedProduct> {
     let html = (
       await fetchWithScrapingBee({
         url,
         renderJs: true,
         premiumProxy: true,
         countryCode: "fr",
-        waitMs: 4000,
+        waitMs: 8000,
         blockResources: false,
+        waitFor:
+          "h1.x-item-title__mainTitle, #itemTitle, [data-testid='x-price-primary']",
       })
     ).html;
 
@@ -51,9 +57,11 @@ export class EbayProductProvider implements ProductPageProvider {
           renderJs: true,
           premiumProxy: true,
           stealthProxy: true,
-          countryCode: "fr",
-          waitMs: 5500,
+          countryCode: "de",
+          waitMs: 12000,
           blockResources: false,
+          waitFor:
+            "h1.x-item-title__mainTitle, #itemTitle, [data-testid='x-price-primary']",
         })
       ).html;
       parsed = parseEbayProductHtml(html, url);

@@ -7,6 +7,8 @@ export type AdFilters = {
   search?: string;
   statut?: AdStatus | AdStatus[];
   group?: AdStatusGroup;
+  /** Filtre sur une liste d’IDs (ex. résultat d’un import catalogue). */
+  ids?: string[];
   page?: number;
   limit?: number;
   sortBy?: "created_at" | "updated_at" | "titre";
@@ -34,6 +36,10 @@ export async function fetchAds(
     .from("ads")
     .select("*", { count: "exact" })
     .eq("user_id", userId);
+
+  if (filters.ids && filters.ids.length > 0) {
+    query = query.in("id", filters.ids.slice(0, 100));
+  }
 
   if (filters.group) {
     const statuses = getStatusesForGroup(filters.group);

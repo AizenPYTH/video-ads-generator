@@ -2,6 +2,8 @@
  * Classifie une URL d’import : fiche produit unique vs catalogue (boutique / catégorie / recherche).
  */
 
+import { coerceImportUrl } from "@/lib/scraping/coerce-url";
+
 export type UrlImportKind = "product" | "catalog" | "unknown";
 
 export type ClassifiedUrl = {
@@ -19,7 +21,7 @@ const AMAZON_HOST =
 export function classifyImportUrl(rawUrl: string): ClassifiedUrl {
   let parsed: URL;
   try {
-    parsed = new URL(rawUrl.trim());
+    parsed = new URL(coerceImportUrl(rawUrl));
   } catch {
     return {
       kind: "unknown",
@@ -176,7 +178,7 @@ export function classifyImportUrl(rawUrl: string): ClassifiedUrl {
 
 export function isEbayItemUrl(url: string): boolean {
   try {
-    const u = new URL(url);
+    const u = new URL(coerceImportUrl(url));
     return EBAY_HOST.test(u.hostname) && /\/itm\/\d+/i.test(u.pathname);
   } catch {
     return false;

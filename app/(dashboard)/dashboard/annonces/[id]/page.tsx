@@ -34,20 +34,29 @@ export default async function AnnonceDetailPage({ params }: PageProps) {
 
   let dbImages = await fetchAdImages(user.id, id);
 
-  // Réparer les imports où les images n'étaient que dans metadata
+  // Réparer les imports / analyses où les images n'étaient que dans metadata
   if (
     dbImages.length === 0 &&
     ad.metadata &&
     typeof ad.metadata === "object"
   ) {
-    const metaImages =
-      (ad.metadata as { images?: string[] }).images?.filter(Boolean) ?? [];
-    if (metaImages.length > 0) {
+    const meta = ad.metadata as {
+      images?: string[];
+      photo_urls?: string[];
+      source_images?: string[];
+    };
+    const metaImages = [
+      ...(meta.images ?? []),
+      ...(meta.source_images ?? []),
+      ...(meta.photo_urls ?? []),
+    ].filter((u): u is string => typeof u === "string" && u.length > 0);
+    const uniqueMeta = [...new Set(metaImages)];
+    if (uniqueMeta.length > 0) {
       const ensure = await ensureRemoteImagesOnAd({
         userId: user.id,
         adId: id,
-        urls: metaImages,
-        replace: true,
+        urls: uniqueMeta,
+        replace: false,
       });
       console.info("[annonce-detail] promoted metadata images", {
         adId: id,
@@ -66,6 +75,15 @@ export default async function AnnonceDetailPage({ params }: PageProps) {
           .eq("id", id)
           .eq("user_id", user.id);
         dbImages = await fetchAdImages(user.id, id);
+      } else {
+        // Afficher au moins les URLs externes en attendant l’hébergement
+        dbImages = uniqueMeta.slice(0, 6).map((url, index) => ({
+          id: `meta-${index}`,
+          url,
+          ordre: index,
+          est_principale: index === 0,
+          storage_path: null,
+        }));
       }
     }
   }
@@ -141,6 +159,7 @@ export default async function AnnonceDetailPage({ params }: PageProps) {
           categoryPath?: string[];
           confidence?: number;
           message?: string;
+          missingAspects?: string[];
           alternatives?: Array<{
             categoryId: string;
             categoryName: string;
@@ -148,6 +167,95 @@ export default async function AnnonceDetailPage({ params }: PageProps) {
           }>;
         })
       : null;
+
+  const itemSpecificsRaw =
+    meta.item_specifics && typeof meta.item_specifics === "object"
+      ? (meta.item_specifics as Record<string, unknown>)
+      : {};
+  const itemSpecifics: Record<string, string> = {};
+  for (const [k, v] of Object.entries(itemSpecificsRaw)) {
+    if (typeof v === "string" && v.trim()) itemSpecifics[k] = v.trim();
+    else if (Array.isArray(v) && typeof v[0] === "string" && v[0].trim()) {
+      itemSpecifics[k] = v[0].trim();
+    }
+  }
+
+  function findSpecific(name: string): string {
+    const key = name.toLowerCase();
+    const hit = Object.entries(itemSpecifics).find(
+      ([k]) => k.toLowerCase() === key,
+    );
+    return hit?.[1] ?? "";
+  }
+
+  type AspectField = {
+    name: string;
+    required: boolean;
+    values: string[];
+    value: string;
+  };
+
+  const aspectFields: AspectField[] = [];
+  const seenAspect = new Set<string>();
+  const categoryId =
+    (ad.ebay_category_id ? String(ad.ebay_category_id) : null) ||
+    (resolution?.categoryId ? String(resolution.categoryId) : null);
+
+  if (categoryId) {
+    try {
+      const { getItemAspectsForCategory } = await import(
+        "@/services/ebay/taxonomy"
+      );
+      const aspects = await getItemAspectsForCategory(categoryId);
+      for (const aspect of aspects) {
+        if (!aspect.required && !findSpecific(aspect.name)) continue;
+        const key = aspect.name.toLowerCase();
+        if (seenAspect.has(key)) continue;
+        seenAspect.add(key);
+        aspectFields.push({
+          name: aspect.name,
+          required: aspect.required,
+          values: aspect.values?.slice(0, 80) ?? [],
+          value: findSpecific(aspect.name),
+        });
+      }
+    } catch (err) {
+      console.warn("[annonce-detail] aspects load failed", err);
+    }
+  }
+
+  // Fallback : aspects signalés manquants + spécificités déjà présentes
+  for (const name of resolution?.missingAspects ?? []) {
+    const key = name.toLowerCase();
+    if (seenAspect.has(key)) continue;
+    seenAspect.add(key);
+    aspectFields.push({
+      name,
+      required: true,
+      values: [],
+      value: findSpecific(name),
+    });
+  }
+  for (const [name, value] of Object.entries(itemSpecifics)) {
+    const key = name.toLowerCase();
+    if (seenAspect.has(key)) continue;
+    seenAspect.add(key);
+    aspectFields.push({
+      name,
+      required: false,
+      values: [],
+      value,
+    });
+  }
+
+  // Manquants d’abord
+  aspectFields.sort((a, b) => {
+    const aMiss = a.required && !a.value.trim() ? 0 : 1;
+    const bMiss = b.required && !b.value.trim() ? 0 : 1;
+    if (aMiss !== bMiss) return aMiss - bMiss;
+    if (a.required !== b.required) return a.required ? -1 : 1;
+    return a.name.localeCompare(b.name, "fr");
+  });
 
   let listingId =
     (typeof meta.ebay_listing_id === "string" && meta.ebay_listing_id) ||
@@ -207,6 +315,13 @@ export default async function AnnonceDetailPage({ params }: PageProps) {
       ebayListingId={listingId}
       ebayListingUrl={listingUrl}
       ebaySellerListingsUrl={buildEbaySellerListingsUrl()}
+      priceWarning={
+        typeof meta.price_warning === "string" ? meta.price_warning : null
+      }
+      identification={
+        (ad.resultat_identification as IdentificationResult | null) ?? null
+      }
+      aspectFields={aspectFields}
     />
   );
 }

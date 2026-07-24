@@ -1,7 +1,9 @@
 "use server";
 
+import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import {
   discoverCatalogProductUrls,
   importFromUrl,
@@ -21,8 +23,15 @@ import { prepareProductImages } from "@/lib/images/dedupe";
 import { ensureRemoteImagesOnAd } from "@/features/ads/ensure-ad-images";
 import { recalculateAdStatus } from "@/features/ads/recalculate-status";
 import { classifyImportUrl } from "@/lib/scraping/url-kind";
+import { coerceImportUrl } from "@/lib/scraping/coerce-url";
 import { inferProductTypeFromTitle } from "@/lib/scraping/infer-product-type";
 import { AppError } from "@/lib/errors/app-error";
+import {
+  formatPriceForStorage,
+  PRICE_NOT_DETECTED_MESSAGE,
+} from "@/lib/scraping/parse-price";
+import { collectRawAspectValues } from "@/services/ebay/aspects";
+import { enrichItemSpecificsForEbay } from "@/features/ai/fill-missing-aspects";
 
 export type UrlImportActionResult<T = void> = {
   error?: string;
@@ -78,23 +87,47 @@ function buildItemSpecifics(input: {
     specifics.Type ??= type;
   }
 
-  return specifics;
+  // Enrichissement titre (marque compatible, OEM…) — comme à la publication
+  const enriched = collectRawAspectValues({
+    title: input.title,
+    itemSpecifics: specifics,
+    brand: specifics.Brand || specifics.Marque || input.brand,
+    type: specifics.Type || null,
+    productType: specifics.Type || null,
+    compatibleBrand:
+      specifics["Compatible Brand"] || specifics["Marque compatible"] || null,
+    compatibleDevice:
+      specifics["Compatible Device"] ||
+      specifics["Appareil compatible"] ||
+      null,
+    compatibleModel:
+      specifics["Compatible Model Number"] ||
+      specifics["Numéro de modèle compatible"] ||
+      null,
+    mpn: specifics.MPN || null,
+    model: specifics.Model || specifics.Modèle || null,
+  });
+
+  return { ...specifics, ...enriched };
 }
 
 /**
  * Point d’entrée unique : détecte fiche produit vs boutique/catégorie.
+ * @param utopyaCookies cookies de session Utopya (prix visibles uniquement si connecté)
  */
 export async function importProductFromUrl(
   url: string,
+  utopyaCookies?: string | null,
 ): Promise<UrlImportActionResult<UrlImportSuccessData>> {
   try {
-    const classification = classifyImportUrl(url);
+    const normalized = coerceImportUrl(url);
+    const classification = classifyImportUrl(normalized);
 
     if (classification.kind === "catalog") {
-      return importCatalogFromUrl(url);
+      return importCatalogFromUrl(normalized, utopyaCookies);
     }
 
-    return importSingleProductFromUrl(url);
+    return importSingleProductFromUrl(normalized, utopyaCookies);
   } catch (err) {
     if (err instanceof AppError) {
       return { error: err.message };
@@ -105,77 +138,90 @@ export async function importProductFromUrl(
 
 async function importCatalogFromUrl(
   url: string,
+  utopyaCookies?: string | null,
 ): Promise<UrlImportActionResult<UrlImportSuccessData>> {
-  const discovered = await discoverCatalogProductUrls(url);
+  const discovered = await discoverCatalogProductUrls(url, {
+    cookies: utopyaCookies,
+  });
   const adIds: string[] = [];
+  const failureReasons: string[] = [];
   let failedCount = 0;
 
-  const richCards = discovered.cards.filter((c) => c.title || c.image);
-  const useGrid = richCards.length >= 2;
+  const urls = discovered.productUrls;
+  const cardByUrl = new Map(
+    discovered.cards.map((c) => [c.url, c] as const),
+  );
+  const isUtopya = /utopya\.fr/i.test(url);
 
   console.info("[url-import] catalog discover", {
-    urls: discovered.productUrls.length,
+    urls: urls.length,
     cards: discovered.cards.length,
-    richCards: richCards.length,
-    mode: useGrid ? "grid" : "per-product",
+    withPrice: discovered.cards.filter((c) => c.price != null).length,
+    mode: "per-product-with-grid-fallback",
+    concurrency: isUtopya ? 4 : 3,
     source: discovered.validatedUrl,
+    isUtopya,
+    hasCookies: Boolean(utopyaCookies?.trim() || process.env.UTOPYA_COOKIES),
   });
 
-  if (useGrid) {
-    // Une seule page ScrapingBee déjà faite : créer les annonces depuis la grille
-    const CONCURRENCY = 5;
-    for (let i = 0; i < richCards.length; i += CONCURRENCY) {
-      const chunk = richCards.slice(i, i + CONCURRENCY);
-      const results = await Promise.all(
-        chunk.map(async (card) => {
-          const product = scrapedProductFromCatalogCard(card);
+  // Parallélisme : Utopya 4 fiches à la fois (cookies thread-safe via options)
+  const CONCURRENCY = isUtopya ? 4 : 3;
+  for (let i = 0; i < urls.length; i += CONCURRENCY) {
+    const chunk = urls.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(
+      chunk.map(async (productUrl) => {
+        const card = cardByUrl.get(productUrl);
+
+        // 1) Fiche produit — prix grille fusionné si PDP sans prix
+        const pdp = await importSingleProductFromUrl(productUrl, utopyaCookies, {
+          forceProduct: true,
+          // Comme Excel : Taxonomy + IA pour Marque compatible / Type
+          lightEnrich: false,
+          deferImages: true,
+          gridPrice: card?.price ?? null,
+          gridImage: card?.image ?? null,
+        });
+        if (pdp.data?.adId) return pdp;
+
+        // 2) Fallback grille
+        if (card?.title) {
+          console.warn("[url-import] PDP failed, using grid card", {
+            productUrl: productUrl.slice(0, 80),
+            pdpError: pdp.error?.slice(0, 120),
+          });
           return persistScrapedProduct({
-            product,
-            validatedUrl: card.url,
-            provider: "catalog-grid",
-            hashImages: false,
-            // Grille : pas de Taxonomy par produit (évite timeout / 1 seul résultat).
-            // Catégorie eBay à confirmer ensuite en masse ou fiche par fiche.
-            resolveCategory: false,
-          });
-        }),
-      );
-      for (const result of results) {
-        if (result.data?.adId) adIds.push(result.data.adId);
-        else {
-          failedCount += 1;
-          console.warn("[url-import] catalog grid item failed", {
-            error: result.error?.slice(0, 120),
+            product: scrapedProductFromCatalogCard(card),
+            validatedUrl: productUrl,
+            provider: isUtopya ? "utopya-grid" : "catalog-grid",
+            hashImages: true,
+            resolveCategory: true,
+            lightEnrich: false,
+            deferImages: true,
           });
         }
-      }
-    }
-  } else {
-    const CONCURRENCY = 3;
-    const urls = discovered.productUrls;
-    for (let i = 0; i < urls.length; i += CONCURRENCY) {
-      const chunk = urls.slice(i, i + CONCURRENCY);
-      const results = await Promise.all(
-        chunk.map((productUrl) => importSingleProductFromUrl(productUrl)),
-      );
-      for (const result of results) {
-        if (result.data?.adId) adIds.push(result.data.adId);
-        else {
-          failedCount += 1;
-          console.warn("[url-import] catalog item failed", {
-            error: result.error?.slice(0, 120),
-          });
+        return pdp;
+      }),
+    );
+    for (const result of results) {
+      if (result.data?.adId) adIds.push(result.data.adId);
+      else {
+        failedCount += 1;
+        if (result.error && failureReasons.length < 5) {
+          failureReasons.push(result.error.slice(0, 160));
         }
+        console.warn("[url-import] catalog item failed", {
+          error: result.error?.slice(0, 160),
+        });
       }
     }
   }
 
   if (adIds.length === 0) {
+    const detail = failureReasons[0]
+      ? ` Détail : ${failureReasons[0]}`
+      : "";
     return {
-      error:
-        failedCount > 0
-          ? `Aucun produit n’a pu être importé (${failedCount} échec${failedCount > 1 ? "s" : ""}).`
-          : "Aucun produit trouvé à importer.",
+      error: `Aucun produit n’a pu être importé (${failedCount} échec${failedCount > 1 ? "s" : ""}).${detail}`,
     };
   }
 
@@ -196,15 +242,52 @@ async function importCatalogFromUrl(
 
 async function importSingleProductFromUrl(
   url: string,
+  utopyaCookies?: string | null,
+  opts?: {
+    forceProduct?: boolean;
+    lightEnrich?: boolean;
+    deferImages?: boolean;
+    gridPrice?: number | null;
+    gridImage?: string | null;
+  },
 ): Promise<UrlImportActionResult<UrlImportSuccessData>> {
   try {
-    const result = await importFromUrl(url);
+    const result = await importFromUrl(url, {
+      cookies: utopyaCookies,
+      forceProduct: opts?.forceProduct,
+    });
+
+    const product = { ...result.product };
+    // Fusion prix grille si fiche sans prix (cookies / timing ScrapingBee)
+    if (
+      (product.price == null || !Number.isFinite(product.price)) &&
+      opts?.gridPrice != null &&
+      Number.isFinite(opts.gridPrice) &&
+      opts.gridPrice > 0
+    ) {
+      product.price = opts.gridPrice;
+      product.raw = {
+        ...product.raw,
+        priceFromGrid: true,
+      };
+    }
+    // Image grille en secours si galerie PDP vide
+    if (
+      (!product.images || product.images.length === 0) &&
+      opts?.gridImage
+    ) {
+      product.images = [opts.gridImage];
+      product.raw = { ...product.raw, imageFromGrid: true };
+    }
+
     return persistScrapedProduct({
-      product: result.product,
+      product,
       validatedUrl: result.validatedUrl,
       provider: result.provider,
       hashImages: true,
       resolveCategory: true,
+      lightEnrich: opts?.lightEnrich,
+      deferImages: opts?.deferImages,
     });
   } catch (err) {
     if (err instanceof AppError) {
@@ -220,11 +303,17 @@ async function persistScrapedProduct(input: {
   provider: string;
   hashImages: boolean;
   resolveCategory: boolean;
+  /** true = heuristiques seules (pas d’OpenAI). false = comme Excel. */
+  lightEnrich?: boolean;
+  /** Hébergement images après retour (catalogue plus rapide / liste visible tout de suite). */
+  deferImages?: boolean;
 }): Promise<UrlImportActionResult<UrlImportSuccessData>> {
   try {
     const userId = await requireUserId();
     const supabase = await createClient();
 
+    // Journal url_imports : best-effort (ne doit jamais bloquer l’annonce)
+    let urlImportId: string | null = null;
     const { data: urlImport, error: insertError } = await supabase
       .from("url_imports")
       .insert({
@@ -234,17 +323,24 @@ async function persistScrapedProduct(input: {
         metadata: {},
       })
       .select("id")
-      .single();
+      .maybeSingle();
 
-    if (insertError || !urlImport) {
-      return { error: "Impossible de créer l'import URL." };
+    if (insertError) {
+      console.warn(
+        "[url-import] url_imports insert skipped",
+        insertError.message,
+      );
+    } else {
+      urlImportId = urlImport?.id ?? null;
     }
 
     try {
-      await supabase
-        .from("url_imports")
-        .update({ statut: "ANALYZING" })
-        .eq("id", urlImport.id);
+      if (urlImportId) {
+        await supabase
+          .from("url_imports")
+          .update({ statut: "ANALYZING" })
+          .eq("id", urlImportId);
+      }
 
       const titre = buildEbayTitle(input.product.title, input.product.brand);
       const description = buildEbayDescription(
@@ -265,12 +361,15 @@ async function persistScrapedProduct(input: {
       });
       const ebayConditionId =
         mapEbayConditionId(input.product.condition) ?? "1000";
-      const prixVente =
-        input.product.price && input.product.price > 0
-          ? input.product.price.toFixed(2)
-          : null;
+      const prixVente = formatPriceForStorage(input.product.price);
+      const priceWarning =
+        typeof input.product.raw?.priceWarning === "string"
+          ? input.product.raw.priceWarning
+          : prixVente
+            ? null
+            : PRICE_NOT_DETECTED_MESSAGE;
 
-      const itemSpecifics = buildItemSpecifics({
+      let itemSpecifics = buildItemSpecifics({
         scraped: input.product.itemSpecifics,
         brand: input.product.brand,
         asin,
@@ -279,21 +378,33 @@ async function persistScrapedProduct(input: {
 
       const productType =
         itemSpecifics.Type || inferProductTypeFromTitle(titre);
+      if (productType) {
+        itemSpecifics.Type ??= productType;
+        itemSpecifics["Type de produit"] ??= productType;
+        itemSpecifics["Product Type"] ??= productType;
+      }
 
-      const imagePrep = await prepareProductImages(input.product.images, {
+      const sourceImages = (input.product.images ?? []).filter(Boolean);
+      const imagePrep = await prepareProductImages(sourceImages, {
         max: 6,
         contentHash: input.hashImages,
       });
+      // Toujours garder les URLs sources (même si download échoue)
+      const imagesForMeta =
+        imagePrep.images.map((i) => i.url).filter(Boolean).length > 0
+          ? imagePrep.images.map((i) => i.url)
+          : sourceImages;
 
       console.info("[url-import] images", {
         before: imagePrep.before,
         afterUrl: imagePrep.afterUrlDedupe,
         afterHash: imagePrep.afterContentDedupe,
+        sourceKept: imagesForMeta.length,
         specifics: Object.keys(itemSpecifics),
         provider: input.provider,
       });
 
-      const resolution = input.resolveCategory
+      let resolution = input.resolveCategory
         ? await resolveCategoryForRow({
             titre,
             description,
@@ -306,6 +417,10 @@ async function persistScrapedProduct(input: {
             product_type: productType,
             type: productType,
             item_specifics: itemSpecifics,
+            compatible_device:
+              itemSpecifics["Compatible Device"] ||
+              itemSpecifics["Appareil compatible"] ||
+              null,
           })
         : {
             status: "needs_review" as const,
@@ -318,11 +433,68 @@ async function persistScrapedProduct(input: {
             source: "none" as const,
             taxonomySource: "eBay Taxonomy" as const,
             alternatives: [],
-            missingAspects: [],
+            missingAspects: [] as string[],
             recommendedAspects: [],
             allowedConditions: [],
             message: "Catégorie à confirmer après import grille",
           };
+
+      // Compléter TOUJOURS les champs eBay obligatoires (Amazon / eBay / Utopya)
+      // comme à l’import Excel — pas seulement si un aspect manque déjà.
+      if (input.resolveCategory) {
+        let categoryAspects: Awaited<
+          ReturnType<
+            typeof import("@/services/ebay/taxonomy").getItemAspectsForCategory
+          >
+        > = [];
+        try {
+          if (resolution.categoryId) {
+            const { getItemAspectsForCategory } = await import(
+              "@/services/ebay/taxonomy"
+            );
+            categoryAspects = await getItemAspectsForCategory(
+              resolution.categoryId,
+            );
+          }
+        } catch {
+          /* ignore */
+        }
+
+        const requiredNames = categoryAspects
+          .filter((a) => a.required)
+          .map((a) => a.name);
+
+        const enriched = await enrichItemSpecificsForEbay({
+          title: titre,
+          description,
+          itemSpecifics,
+          missingAspects:
+            resolution.missingAspects?.length
+              ? resolution.missingAspects
+              : requiredNames.length
+                ? requiredNames
+                : ["Marque", "Marque compatible", "Type", "Couleur", "Color"],
+          categoryAspects,
+          skipOpenAI: Boolean(input.lightEnrich),
+        });
+        itemSpecifics = enriched.itemSpecifics;
+        resolution = {
+          ...resolution,
+          missingAspects: enriched.stillMissing,
+          message:
+            enriched.stillMissing.length === 0
+              ? resolution.message?.includes("manquants")
+                ? "Catégorie et caractéristiques complétées."
+                : resolution.message
+              : `Champs encore manquants : ${enriched.stillMissing.join(", ")}`,
+          status:
+            enriched.stillMissing.length === 0 &&
+            resolution.status === "needs_review" &&
+            resolution.categoryId
+              ? "resolved"
+              : resolution.status,
+        };
+      }
 
       console.info("[url-import] category", {
         status: resolution.status,
@@ -338,13 +510,15 @@ async function persistScrapedProduct(input: {
       });
 
       if (adResult.error || !adResult.data) {
-        await supabase
-          .from("url_imports")
-          .update({
-            statut: "FAILED",
-            erreur: adResult.error ?? "Échec de création de l'annonce",
-          })
-          .eq("id", urlImport.id);
+        if (urlImportId) {
+          await supabase
+            .from("url_imports")
+            .update({
+              statut: "FAILED",
+              erreur: adResult.error ?? "Échec de création de l'annonce",
+            })
+            .eq("id", urlImportId);
+        }
         return { error: adResult.error ?? "Échec de création de l'annonce." };
       }
 
@@ -366,9 +540,13 @@ async function persistScrapedProduct(input: {
       const metadataBase = {
         source_url: input.validatedUrl,
         provider: input.provider,
-        brand: input.product.brand,
+        brand:
+          itemSpecifics.Brand ||
+          itemSpecifics.Marque ||
+          input.product.brand,
         currency: input.product.currency,
-        images: imagePrep.images.map((i) => i.url),
+        images: imagesForMeta,
+        source_images: sourceImages,
         image_dedupe: {
           before: imagePrep.before,
           afterUrl: imagePrep.afterUrlDedupe,
@@ -380,14 +558,35 @@ async function persistScrapedProduct(input: {
         type: productType,
         product_type: productType,
         item_specifics: itemSpecifics,
+        compatible_brand:
+          itemSpecifics["Compatible Brand"] ||
+          itemSpecifics["Marque compatible"] ||
+          null,
+        compatible_device:
+          itemSpecifics["Compatible Device"] ||
+          itemSpecifics["Appareil compatible"] ||
+          null,
+        compatible_model:
+          itemSpecifics["Compatible Model Number"] ||
+          itemSpecifics["Numéro de modèle compatible"] ||
+          null,
+        mpn: itemSpecifics.MPN || null,
+        model: itemSpecifics.Model || itemSpecifics.Modèle || null,
         category_resolution: resolution,
         category_name: resolution.categoryName,
         root_category_name: resolution.rootCategoryName,
         subcategory_name: resolution.subcategoryName,
         category_path: resolution.categoryPath,
+        price_warning: priceWarning,
+        price_login_required: Boolean(input.product.raw?.priceLoginRequired),
+        utopya_attributes:
+          input.product.raw?.attributes &&
+          typeof input.product.raw.attributes === "object"
+            ? input.product.raw.attributes
+            : undefined,
       };
 
-      await supabase
+      const { error: adUpdateError } = await supabase
         .from("ads")
         .update({
           titre,
@@ -406,65 +605,97 @@ async function persistScrapedProduct(input: {
         })
         .eq("id", adId);
 
-      if (imagePrep.images.length > 0) {
-        const ensure = await ensureRemoteImagesOnAd({
+      if (adUpdateError) {
+        console.error("[url-import] ad update failed", adUpdateError.message);
+        return {
+          error: `Annonce créée mais non remplie : ${adUpdateError.message}`,
+        };
+      }
+
+      // Affichage immédiat : seed ad_images avec URLs sources (storage_path null OK)
+      if (imagesForMeta.length > 0) {
+        await seedExternalAdImages({
           userId,
           adId,
-          preparedImages: imagePrep.images,
-          replace: true,
+          urls: imagesForMeta.slice(0, 6),
         });
+      }
 
-        console.info("[url-import] ad_images ensure", {
-          adId,
-          hosted: ensure.hosted.length,
-          skipped: ensure.skipped,
-          errors: ensure.errors.slice(0, 3),
-        });
-
-        if (ensure.hosted.length > 0) {
-          await supabase
-            .from("ads")
-            .update({
-              metadata: {
-                ...metadataBase,
-                images: ensure.hosted.map((h) => h.url),
-                image_dedupe: {
-                  ...metadataBase.image_dedupe,
-                  hosted: ensure.hosted.length,
+      const hostImages = async () => {
+        try {
+          const ensure = await ensureRemoteImagesOnAd({
+            userId,
+            adId,
+            // Prefer buffers if any, sinon re-télécharge les URLs sources
+            preparedImages: imagePrep.images.some((i) => i.buffer)
+              ? imagePrep.images
+              : undefined,
+            urls: sourceImages.length > 0 ? sourceImages : imagesForMeta,
+            replace: true,
+          });
+          console.info("[url-import] ad_images ensure", {
+            adId,
+            hosted: ensure.hosted.length,
+            skipped: ensure.skipped,
+            errors: ensure.errors.slice(0, 3),
+          });
+          if (ensure.hosted.length > 0) {
+            const admin = createAdminClient();
+            await admin
+              .from("ads")
+              .update({
+                metadata: {
+                  ...metadataBase,
+                  images: ensure.hosted.map((h) => h.url),
+                  source_images: sourceImages,
+                  image_dedupe: {
+                    ...metadataBase.image_dedupe,
+                    hosted: ensure.hosted.length,
+                  },
                 },
-              },
-            })
-            .eq("id", adId);
-        } else if (ensure.errors.length > 0) {
+              })
+              .eq("id", adId);
+          }
+        } catch (err) {
           console.warn(
-            "[url-import] aucune image hébergée",
-            ensure.errors.slice(0, 5),
+            "[url-import] deferred image host failed",
+            err instanceof Error ? err.message : err,
           );
+        }
+      };
+
+      if (imagesForMeta.length > 0 || sourceImages.length > 0) {
+        if (input.deferImages) {
+          after(() => hostImages());
+        } else {
+          await hostImages();
         }
       }
 
-      await supabase
-        .from("url_imports")
-        .update({
-          statut: "COMPLETED",
-          ad_id: adId,
-          metadata: {
-            provider: input.provider,
-            title: titre,
-            image_count: imagePrep.images.length,
-            images_before: imagePrep.before,
-            price: prixVente,
-            sku,
-            asin,
-            category_id: resolution.categoryId,
-            category_name: resolution.categoryName,
-            category_status: resolution.status,
-            category_message: resolution.message,
-            item_specifics: itemSpecifics,
-            statut,
-          },
-        })
-        .eq("id", urlImport.id);
+      if (urlImportId) {
+        await supabase
+          .from("url_imports")
+          .update({
+            statut: "COMPLETED",
+            ad_id: adId,
+            metadata: {
+              provider: input.provider,
+              title: titre,
+              image_count: imagePrep.images.length,
+              images_before: imagePrep.before,
+              price: prixVente,
+              sku,
+              asin,
+              category_id: resolution.categoryId,
+              category_name: resolution.categoryName,
+              category_status: resolution.status,
+              category_message: resolution.message,
+              item_specifics: itemSpecifics,
+              statut,
+            },
+          })
+          .eq("id", urlImportId);
+      }
 
       revalidatePath("/dashboard/annonces");
       revalidatePath(`/dashboard/annonces/${adId}`);
@@ -475,17 +706,19 @@ async function persistScrapedProduct(input: {
         data: {
           mode: "product",
           adId,
-          urlImportId: urlImport.id,
+          urlImportId: urlImportId ?? undefined,
           importedCount: 1,
           adIds: [adId],
         },
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erreur d'import";
-      await supabase
-        .from("url_imports")
-        .update({ statut: "FAILED", erreur: message })
-        .eq("id", urlImport.id);
+      if (urlImportId) {
+        await supabase
+          .from("url_imports")
+          .update({ statut: "FAILED", erreur: message })
+          .eq("id", urlImportId);
+      }
       return { error: message };
     }
   } catch (err) {
@@ -496,4 +729,40 @@ async function persistScrapedProduct(input: {
 function looksLikeAsin(value: string | null | undefined): boolean {
   if (!value) return false;
   return /^B0[A-Z0-9]{8}$/i.test(value.trim());
+}
+
+/** Insère tout de suite les URLs (Utopya/CDN) pour que la liste affiche une photo. */
+async function seedExternalAdImages(input: {
+  userId: string;
+  adId: string;
+  urls: string[];
+}): Promise<void> {
+  try {
+    const admin = createAdminClient();
+    const { count } = await admin
+      .from("ad_images")
+      .select("id", { count: "exact", head: true })
+      .eq("ad_id", input.adId)
+      .eq("user_id", input.userId);
+    if ((count ?? 0) > 0) return;
+
+    const rows = input.urls.slice(0, 6).map((url, index) => ({
+      user_id: input.userId,
+      ad_id: input.adId,
+      url,
+      storage_path: null,
+      ordre: index,
+      est_principale: index === 0,
+    }));
+    if (rows.length === 0) return;
+    const { error } = await admin.from("ad_images").insert(rows);
+    if (error) {
+      console.warn("[url-import] seed images failed", error.message);
+    }
+  } catch (err) {
+    console.warn(
+      "[url-import] seed images error",
+      err instanceof Error ? err.message : err,
+    );
+  }
 }

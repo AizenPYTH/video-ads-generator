@@ -411,7 +411,90 @@ async function createDraftAdFromImport(
 ): Promise<ImportActionResult<{ adId: string }>> {
   const supabase = await createClient();
 
-  const categoryId = resolution.categoryId;
+  let itemSpecifics: Record<string, string> = {
+    ...data.item_specifics,
+    ...(data.compatible_brand
+      ? {
+          "Compatible Brand": data.compatible_brand,
+          "Marque compatible": data.compatible_brand,
+        }
+      : {}),
+    ...(data.compatible_device
+      ? {
+          "Compatible Device": data.compatible_device,
+          "Appareil compatible": data.compatible_device,
+          "Modèle compatible": data.compatible_device,
+        }
+      : {}),
+    ...(data.compatible_model
+      ? {
+          "Compatible Model Number": data.compatible_model,
+          "Numéro de modèle compatible": data.compatible_model,
+          "Référence compatible": data.compatible_model,
+        }
+      : {}),
+    ...(data.brand ? { Brand: data.brand, Marque: data.brand } : {}),
+    ...(data.mpn ? { MPN: data.mpn } : {}),
+    ...(data.model ? { Model: data.model, Modèle: data.model } : {}),
+    ...(data.type || data.product_type
+      ? {
+          Type: data.type || data.product_type || "",
+          "Product Type": data.product_type || data.type || "",
+        }
+      : {}),
+    ...(data.color ? { Color: data.color, Couleur: data.color } : {}),
+  };
+
+  let workingResolution = resolution;
+  if (
+    workingResolution.missingAspects?.length ||
+    !itemSpecifics["Marque compatible"]
+  ) {
+    try {
+      const { enrichItemSpecificsForEbay } = await import(
+        "@/features/ai/fill-missing-aspects"
+      );
+      let categoryAspects: Awaited<
+        ReturnType<
+          typeof import("@/services/ebay/taxonomy").getItemAspectsForCategory
+        >
+      > = [];
+      if (workingResolution.categoryId) {
+        const { getItemAspectsForCategory } = await import(
+          "@/services/ebay/taxonomy"
+        );
+        categoryAspects = await getItemAspectsForCategory(
+          workingResolution.categoryId,
+        );
+      }
+      const enriched = await enrichItemSpecificsForEbay({
+        title: data.titre ?? "",
+        description: data.description,
+        itemSpecifics,
+        missingAspects:
+          workingResolution.missingAspects?.length
+            ? workingResolution.missingAspects
+            : ["Marque compatible", "Marque", "Type"],
+        categoryAspects,
+      });
+      itemSpecifics = enriched.itemSpecifics;
+      workingResolution = {
+        ...workingResolution,
+        missingAspects: enriched.stillMissing,
+        status:
+          enriched.stillMissing.length === 0 && workingResolution.categoryId
+            ? "resolved"
+            : workingResolution.status,
+      };
+    } catch (err) {
+      console.warn(
+        "[import] fill aspects failed",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  const categoryId = workingResolution.categoryId;
   const { recalculateAdStatus } = await import(
     "@/features/ads/recalculate-status"
   );
@@ -423,11 +506,10 @@ async function createDraftAdFromImport(
     ebay_category_id: categoryId,
     ebay_condition_id: data.ebay_condition_id,
     sku: data.sku,
-    categoryStatus: resolution.status,
-    categoryAmbiguous: resolution.status === "needs_review",
-    categoryConfidence: resolution.confidence,
+    categoryStatus: workingResolution.status,
+    categoryAmbiguous: workingResolution.status === "needs_review",
+    categoryConfidence: workingResolution.confidence,
   });
-  const needsReview = adStatut === "NEEDS_REVIEW" || adStatut === "DRAFT";
 
   const { data: ad, error } = await supabase
     .from("ads")
@@ -465,45 +547,33 @@ async function createDraftAdFromImport(
           return: data.return_profile,
           payment: data.payment_profile,
         },
-        item_specifics: {
-          ...data.item_specifics,
-          ...(data.compatible_brand
-            ? {
-                "Compatible Brand": data.compatible_brand,
-                "Marque compatible": data.compatible_brand,
-              }
-            : {}),
-          ...(data.compatible_device
-            ? {
-                "Compatible Device": data.compatible_device,
-                "Appareil compatible": data.compatible_device,
-              }
-            : {}),
-          ...(data.compatible_model
-            ? {
-                "Compatible Model Number": data.compatible_model,
-                "Numéro de modèle compatible": data.compatible_model,
-              }
-            : {}),
-          ...(data.brand
-            ? { Brand: data.brand, Marque: data.brand }
-            : {}),
-        },
-        brand: data.brand,
+        item_specifics: itemSpecifics,
+        brand: itemSpecifics.Brand || itemSpecifics.Marque || data.brand,
         manufacturer: data.manufacturer,
-        mpn: data.mpn,
-        model: data.model,
+        mpn: itemSpecifics.MPN || data.mpn,
+        model: itemSpecifics.Model || itemSpecifics.Modèle || data.model,
         product_type: data.product_type,
-        type: data.type,
+        type: itemSpecifics.Type || data.type,
         color: data.color,
         material: data.material,
-        compatible_brand: data.compatible_brand,
-        compatible_device: data.compatible_device,
-        compatible_model: data.compatible_model,
-        category_resolution: resolution,
-        category_name: resolution.categoryName ?? data.category_name,
-        root_category_name: resolution.rootCategoryName,
-        subcategory_name: resolution.subcategoryName,
+        compatible_brand:
+          itemSpecifics["Compatible Brand"] ||
+          itemSpecifics["Marque compatible"] ||
+          data.compatible_brand,
+        compatible_device:
+          itemSpecifics["Compatible Device"] ||
+          itemSpecifics["Appareil compatible"] ||
+          data.compatible_device,
+        compatible_model:
+          itemSpecifics["Compatible Model Number"] ||
+          itemSpecifics["Numéro de modèle compatible"] ||
+          data.compatible_model,
+        detected_specifics: data.detected_specifics,
+        missing_useful_fields: data.missing_useful_fields,
+        category_resolution: workingResolution,
+        category_name: workingResolution.categoryName ?? data.category_name,
+        root_category_name: workingResolution.rootCategoryName,
+        subcategory_name: workingResolution.subcategoryName,
       },
     })
     .select("id")

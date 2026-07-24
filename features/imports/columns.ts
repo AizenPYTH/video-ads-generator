@@ -1,5 +1,10 @@
 /** Colonnes modèle import eBay France (Smart Seller) — Category ID facultatif. */
 
+import {
+  UTOPYA_HEADER_ALIASES,
+  type UtopiaMappedField,
+} from "./utopya-mapping";
+
 export const EBAY_FR_COLUMNS = [
   "Action",
   "Custom label (SKU)",
@@ -53,7 +58,7 @@ export const REQUIRED_COLUMN_LABELS = [
   },
 ] as const;
 
-/** Mapping en-tête fichier (normalisé) → clé interne. */
+/** Mapping en-tête fichier (normalisé, sans accents) → clé interne. */
 export const HEADER_ALIASES: Record<string, string> = {
   // eBay FR
   action: "action",
@@ -68,6 +73,7 @@ export const HEADER_ALIASES: Record<string, string> = {
   titre: "titre",
   subtitle: "subtitle",
   "p:ean": "ean",
+  "p ean": "ean",
   ean: "ean",
   "start price": "prix_vente",
   prix_vente: "prix_vente",
@@ -110,8 +116,22 @@ export const HEADER_ALIASES: Record<string, string> = {
   notes: "notes",
 };
 
+// Utopia / Magento FR (Marque, Modèle, Compatibilité…)
+for (const [alias, field] of Object.entries(UTOPYA_HEADER_ALIASES)) {
+  if (!HEADER_ALIASES[alias]) {
+    HEADER_ALIASES[alias] = field as UtopiaMappedField;
+  }
+}
+
 export function normalizeHeader(header: string): string {
-  return header.trim().toLowerCase().replace(/\s+/g, " ");
+  return header
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[_/\\|;:]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export function mapHeader(header: string): string | null {
@@ -121,7 +141,13 @@ export function mapHeader(header: string): string | null {
 
 export const DROPDOWN_ACTIONS = ["Add", "Revise", "Relist", "End"] as const;
 export const DROPDOWN_FORMATS = ["FixedPrice", "Auction"] as const;
-export const DROPDOWN_DURATIONS = ["GTC", "Days_3", "Days_5", "Days_7", "Days_10"] as const;
+export const DROPDOWN_DURATIONS = [
+  "GTC",
+  "Days_3",
+  "Days_5",
+  "Days_7",
+  "Days_10",
+] as const;
 export const DROPDOWN_COUNTRIES = ["FR", "BE", "CH", "LU", "DE", "ES", "IT"] as const;
 export const DROPDOWN_CONDITIONS = [
   { id: "1000", label: "1000 — Neuf" },
@@ -132,18 +158,55 @@ export const DROPDOWN_CONDITIONS = [
 ] as const;
 
 export const COLUMN_INSTRUCTIONS: Array<{ column: string; text: string }> = [
-  { column: "Action", text: "Add = créer, Revise = modifier, Relist = remetre en vente, End = terminer." },
-  { column: "Custom label (SKU)", text: "Référence vendeur unique. Conservez les zéros (texte)." },
-  { column: "Category ID", text: "Facultatif. Si vide, Smart Seller détecte la catégorie via eBay Taxonomy (EBAY_FR)." },
-  { column: "Category Name", text: "Nom de catégorie indicatif pour aider la détection automatique." },
+  {
+    column: "Action",
+    text: "Add = créer, Revise = modifier, Relist = remetre en vente, End = terminer.",
+  },
+  {
+    column: "Custom label (SKU)",
+    text: "Référence vendeur unique. Conservez les zéros (texte).",
+  },
+  {
+    column: "Category ID",
+    text: "Facultatif. Si vide, Smart Seller détecte la catégorie via eBay Taxonomy (EBAY_FR).",
+  },
+  {
+    column: "Category Name",
+    text: "Nom de catégorie indicatif pour aider la détection automatique.",
+  },
   { column: "Title", text: "Titre eBay, max 80 caractères. Obligatoire." },
-  { column: "Start price", text: "Prix de vente en euros. Obligatoire, > 0." },
+  {
+    column: "Start price",
+    text: "Prix de vente en euros. Obligatoire, > 0.",
+  },
   { column: "Quantity", text: "Quantité disponible (défaut 1)." },
-  { column: "Item photo URL", text: "URL publique d'image. Laisser vide si aucune URL réelle." },
-  { column: "Condition ID", text: "1000 Neuf, 1500 Neuf défauts, 2000 Reconditionné, 3000 Occasion, 7000 Pièces." },
-  { column: "Description", text: "Description HTML ou texte de l'annonce." },
-  { column: "Item specifics", text: "Format Brand=Apple|MPN=xxx|Model=yyy. Fusionné avec les colonnes dédiées (priorité aux colonnes)." },
-  { column: "Postal code", text: "Code postal en texte pour conserver les zéros (ex. 01000)." },
-  { column: "P:EAN", text: "Code EAN/GTIN en texte pour conserver les zéros." },
+  {
+    column: "Item photo URL",
+    text: "URL publique d'image. Laisser vide si aucune URL réelle.",
+  },
+  {
+    column: "Condition ID",
+    text: "1000 Neuf, 1500 Neuf défauts, 2000 Reconditionné, 3000 Occasion, 7000 Pièces.",
+  },
+  {
+    column: "Description",
+    text: "Description HTML ou texte de l'annonce.",
+  },
+  {
+    column: "Item specifics",
+    text: "Format Brand=Apple|MPN=xxx|Model=yyy. Fusionné avec les colonnes dédiées (priorité aux colonnes).",
+  },
+  {
+    column: "Postal code",
+    text: "Code postal en texte pour conserver les zéros (ex. 01000).",
+  },
+  {
+    column: "P:EAN",
+    text: "Code EAN/GTIN en texte pour conserver les zéros.",
+  },
   { column: "MPN", text: "Référence fabricant. Texte forcé." },
+  {
+    column: "Marque / Modèle / Compatibilité",
+    text: "Colonnes Utopia FR acceptées : Marque, Modèle, Appareil compatible, Marque compatible, Référence fabricant, Type de produit, Couleur, État…",
+  },
 ];

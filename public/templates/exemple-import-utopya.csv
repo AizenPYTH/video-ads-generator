@@ -1,0 +1,6 @@
+Nom du produit;SKU;Prix;Stock;Marque;Modèle;Appareil compatible;Marque compatible;Référence fabricant;Référence compatible;Type de produit;Type;Couleur;État;Description;URL image;Catégorie
+Écran LCD iPhone 13 OLED;UTP-IP13-LCD-001;49.90;12;OEM;iPhone 13;iPhone 13;Apple;LCD-IP13-OEM;A2482;Pièce détachée;Écran;Noir;Neuf;Écran de remplacement compatible iPhone 13;https://example.com/ip13-lcd.jpg;Pièces smartphones
+Batterie Galaxy S21;UTP-SGS21-BAT-002;28.50;8;OEM;Galaxy S21;Galaxy S21;Samsung;BAT-SGS21-OEM;SM-G991B;Pièce détachée;Batterie;Noir;Neuf;Batterie compatible Samsung Galaxy S21;;Pièces smartphones
+Vitre arrière Pixel 7;UTP-PX7-BACK-003;19.99;25;OEM;Pixel 7;Pixel 7;Google;BACK-PX7-OEM;GQML3;Pièce détachée;Vitre;Blanc;Neuf;Vitre arrière Pixel 7 blanche;;Pièces smartphones
+Connecteur de charge iPhone 12;UTP-IP12-CHG-004;12.00;40;OEM;iPhone 12;iPhone 12;Apple;CHG-IP12-OEM;A2402;Pièce détachée;Connecteur;Noir;Neuf;Nappe connecteur de charge iPhone 12;;Pièces smartphones
+Caméra arrière Redmi Note 12;UTP-RN12-CAM-005;15.40;6;OEM;Redmi Note 12;Redmi Note 12;Xiaomi;CAM-RN12-OEM;23021RAAEG;Pièce détachée;Caméra;Noir;Occasion;Module caméra arrière Redmi Note 12;;Pièces smartphones

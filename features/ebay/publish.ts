@@ -25,6 +25,7 @@ import {
   isEbaySandboxEnvironment,
 } from "@/services/ebay/listing-url";
 import { validateAdForPublish } from "@/features/ads/validation";
+import { parseFrenchPrice } from "@/lib/scraping/parse-price";
 import { fetchAdById } from "@/features/ads/queries";
 import { getEbayTokens } from "@/services/ebay/oauth";
 import type { IdentificationResult } from "@/types/identification";
@@ -220,9 +221,73 @@ export async function publishAd(
       missingRequired,
     });
 
-    if (missingRequired.length > 0) {
+    let finalAspects = aspects;
+    let finalMissing = missingRequired;
+
+    // Dernière chance : compléter via IA les champs obligatoires encore vides
+    if (finalMissing.length > 0) {
+      try {
+        const { enrichItemSpecificsForEbay } = await import(
+          "@/features/ai/fill-missing-aspects"
+        );
+        const meta =
+          ad.metadata && typeof ad.metadata === "object"
+            ? (ad.metadata as Record<string, unknown>)
+            : {};
+        const existing =
+          meta.item_specifics && typeof meta.item_specifics === "object"
+            ? (meta.item_specifics as Record<string, string>)
+            : {};
+        const filled = await enrichItemSpecificsForEbay({
+          title: ad.titre ?? "",
+          description: ad.description,
+          itemSpecifics: { ...existing, ...rawAspects },
+          missingAspects: finalMissing,
+          categoryAspects,
+        });
+        const rebuilt = buildEbayAspects({
+          raw: collectRawAspectValues(
+            extractAspectSourcesFromAd({
+              titre: ad.titre,
+              resultat_identification: ad.resultat_identification,
+              metadata: {
+                ...meta,
+                item_specifics: filled.itemSpecifics,
+              },
+            }),
+          ),
+          categoryAspects,
+        });
+        finalAspects = rebuilt.aspects;
+        finalMissing = rebuilt.missingRequired;
+
+        if (Object.keys(filled.itemSpecifics).length > 0) {
+          await supabase
+            .from("ads")
+            .update({
+              metadata: {
+                ...meta,
+                item_specifics: filled.itemSpecifics,
+                compatible_brand:
+                  filled.itemSpecifics["Compatible Brand"] ||
+                  filled.itemSpecifics["Marque compatible"] ||
+                  meta.compatible_brand,
+              },
+            })
+            .eq("id", adId)
+            .eq("user_id", userId);
+        }
+      } catch (fillErr) {
+        console.warn(
+          "[publish] aspect fill failed",
+          fillErr instanceof Error ? fillErr.message : fillErr,
+        );
+      }
+    }
+
+    if (finalMissing.length > 0) {
       return {
-        error: `Caractéristiques eBay manquantes : ${missingRequired.join(", ")}. Complétez-les dans l’annonce (Type, Marque, Marque compatible…) puis réessayez.`,
+        error: `Caractéristiques eBay manquantes : ${finalMissing.join(", ")}. Complétez-les dans l’annonce (Type, Marque, Marque compatible…) puis réessayez.`,
       };
     }
 
@@ -263,7 +328,7 @@ export async function publishAd(
       description: ad.description!,
       condition,
       images: httpsImages,
-      aspects,
+      aspects: finalAspects,
       quantity: ad.quantite,
     });
 
@@ -280,7 +345,7 @@ export async function publishAd(
 
     const buildOfferInput = (sku: string, policySet: typeof policies) => ({
       sku,
-      price: parseFloat(String(ad.prix_vente)),
+      price: parseFrenchPrice(ad.prix_vente) ?? 0,
       currency: settings?.devise ?? "EUR",
       categoryId: ad.ebay_category_id!,
       fulfillmentPolicyId: policySet.fulfillmentPolicyId,

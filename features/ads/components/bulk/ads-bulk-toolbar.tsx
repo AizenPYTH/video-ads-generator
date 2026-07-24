@@ -1,14 +1,6 @@
 "use client";
 
-import {
-  Archive,
-  FileImage,
-  Frame,
-  Pencil,
-  Shield,
-  Trash2,
-  Upload,
-} from "lucide-react";
+import { Archive, Pencil, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -17,10 +9,6 @@ type Props = {
   disabled?: boolean;
   onPublish: () => void;
   onEditPriceQty: () => void;
-  onCommonImage: () => void;
-  onMatchImages: () => void;
-  onApplyMarketingFrame: () => void;
-  onApplyPolicies: () => void;
   onDraft: () => void;
   onArchive: () => void;
   onDelete: () => void;
@@ -32,10 +20,6 @@ export function AdsBulkToolbar({
   disabled,
   onPublish,
   onEditPriceQty,
-  onCommonImage,
-  onMatchImages,
-  onApplyMarketingFrame,
-  onApplyPolicies,
   onDraft,
   onArchive,
   onDelete,
@@ -67,41 +51,6 @@ export function AdsBulkToolbar({
       >
         <Pencil className="h-4 w-4" />
         Prix / qté
-      </Button>
-      <Button
-        size="sm"
-        variant="glacier"
-        disabled={disabled}
-        onClick={onApplyMarketingFrame}
-      >
-        <Frame className="h-4 w-4" />
-        Cadre Snowwolf
-      </Button>
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={disabled}
-        onClick={onCommonImage}
-      >
-        <FileImage className="h-4 w-4" />
-        Image commune
-      </Button>
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={disabled}
-        onClick={onMatchImages}
-      >
-        Associer images
-      </Button>
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={disabled}
-        onClick={onApplyPolicies}
-      >
-        <Shield className="h-4 w-4" />
-        Politiques
       </Button>
       <Button size="sm" variant="outline" disabled={disabled} onClick={onDraft}>
         Brouillon

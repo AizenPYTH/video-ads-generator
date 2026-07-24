@@ -37,7 +37,7 @@ describe("snowolf marketing + background", () => {
     expect(result.removed).toBe(true);
   });
 
-  it("generates Smart Seller png from buffer using brand frame", async () => {
+  it("generates png from buffer using company frame", async () => {
     const buf = await sharp({
       create: {
         width: 300,
@@ -49,20 +49,70 @@ describe("snowolf marketing + background", () => {
       .png()
       .toBuffer();
 
+    const frame = await sharp({
+      create: {
+        width: 1024,
+        height: 1024,
+        channels: 3,
+        background: { r: 20, g: 40, b: 80 },
+      },
+    })
+      .composite([
+        {
+          input: await sharp({
+            create: {
+              width: 640,
+              height: 700,
+              channels: 3,
+              background: { r: 255, g: 255, b: 255 },
+            },
+          })
+            .png()
+            .toBuffer(),
+          top: 180,
+          left: 192,
+        },
+      ])
+      .png()
+      .toBuffer();
+
     const { buffer, log } = await generateMarketingImage({
       productImageUrl: "https://example.com/p.png",
       productBuffer: buf,
       title: "Test produit",
       price: "12.00",
+      template: { frameBuffer: frame },
     });
 
     expect(log.templateGenerated).toBe(true);
     expect(log.downloadOk).toBe(true);
     expect(log.frameUsed).toBe(true);
-    expect(buffer.byteLength).toBeGreaterThan(20_000);
+    expect(log.customFrame).toBe(true);
+    expect(buffer.byteLength).toBeGreaterThan(2_000);
     const meta = await sharp(buffer).metadata();
     expect(meta.format).toBe("png");
     expect(meta.width).toBe(1024);
+  });
+
+  it("requires a company frame when none is configured", async () => {
+    const buf = await sharp({
+      create: {
+        width: 100,
+        height: 100,
+        channels: 3,
+        background: { r: 10, g: 10, b: 10 },
+      },
+    })
+      .png()
+      .toBuffer();
+
+    await expect(
+      generateMarketingImage({
+        productImageUrl: "https://example.com/p.png",
+        productBuffer: buf,
+        title: "Sans cadre",
+      }),
+    ).rejects.toThrow(/cadre entreprise/i);
   });
 
   it("flags utopia-like watermark hint without removing it", () => {

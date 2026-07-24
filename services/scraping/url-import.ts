@@ -2,11 +2,16 @@ import { AppError } from "@/lib/errors/app-error";
 import { validateUrl } from "@/lib/validation/url";
 import { classifyImportUrl } from "@/lib/scraping/url-kind";
 import {
+  extractCatalogPageUrls,
   extractCatalogProductCards,
   extractCatalogProductLinks,
   MAX_CATALOG_PRODUCTS,
+  withCatalogListLimit,
   type CatalogProductCard,
 } from "@/lib/scraping/catalog-links";
+import { resolveUtopyaCookies } from "@/lib/scraping/utopya-cookies";
+import { inferProductTypeFromTitle } from "@/lib/scraping/infer-product-type";
+import { isUtopyaUrl } from "./providers/utopya-extract";
 import { fetchWithScrapingBee } from "./scrapingbee";
 import { getProviderForUrl } from "./providers";
 import type { ScrapedProduct } from "./providers/base";
@@ -23,11 +28,24 @@ export interface CatalogDiscoverResult {
   validatedUrl: string;
   reason: string;
   productUrls: string[];
-  /** Cartes grille (Magento/Utopya) : titre + image sans re-scrape PDP */
+  /** Cartes grille (Magento/Utopya) : titre + image (+ prix si session) */
   cards: CatalogProductCard[];
 }
 
-export async function importFromUrl(rawUrl: string): Promise<UrlImportResult> {
+export type DiscoverCatalogOptions = {
+  /** Cookies session Utopya (prix + plus de produits) */
+  cookies?: string | null;
+  /**
+   * Quand true : ne refuse pas l’URL même si elle ressemble à un catalogue.
+   * Utilisé pour les fiches découvertes depuis une page catégorie.
+   */
+  forceProduct?: boolean;
+};
+
+export async function importFromUrl(
+  rawUrl: string,
+  options?: DiscoverCatalogOptions,
+): Promise<UrlImportResult> {
   let validated;
 
   try {
@@ -40,7 +58,7 @@ export async function importFromUrl(rawUrl: string): Promise<UrlImportResult> {
   }
 
   const classification = classifyImportUrl(validated.href);
-  if (classification.kind === "catalog") {
+  if (classification.kind === "catalog" && !options?.forceProduct) {
     throw AppError.validation(
       "Cette adresse pointe vers une boutique ou une catégorie (plusieurs produits). Relancez l’import catalogue.",
     );
@@ -49,8 +67,9 @@ export async function importFromUrl(rawUrl: string): Promise<UrlImportResult> {
   const provider = getProviderForUrl(validated.href);
 
   try {
-    const product = await provider.scrape(validated.href);
-
+    // Cookies passés en options (safe en parallèle, pas via process.env)
+    const cookies = resolveUtopyaCookies(options?.cookies);
+    const product = await provider.scrape(validated.href, { cookies });
     return {
       product,
       provider: provider.name,
@@ -74,6 +93,25 @@ export function scrapedProductFromCatalogCard(
     itemSpecifics.Brand = card.brand;
     itemSpecifics.Marque = card.brand;
   }
+  const inferredType = inferProductTypeFromTitle(title);
+  if (inferredType) {
+    itemSpecifics.Type = inferredType;
+    itemSpecifics["Type de produit"] = inferredType;
+  }
+  // Marque pièce inconnue → OEM ; marque compatible depuis titre
+  if (!itemSpecifics.Brand) {
+    itemSpecifics.Brand = "OEM";
+    itemSpecifics.Marque = "OEM";
+  }
+  const compat = title.match(
+    /\b(Apple|Samsung|Xiaomi|Huawei|Oppo|Honor|Google|OnePlus|Sony|Nokia|Motorola|Realme|Vivo|Asus|Lenovo|Microsoft|Nintendo|HP|Dell|iPhone|iPad|MacBook)\b/i,
+  )?.[1];
+  if (compat) {
+    const brand =
+      /iphone|ipad|macbook/i.test(compat) ? "Apple" : compat;
+    itemSpecifics["Compatible Brand"] = brand;
+    itemSpecifics["Marque compatible"] = brand;
+  }
 
   return {
     title,
@@ -86,12 +124,21 @@ export function scrapedProductFromCatalogCard(
     condition: "New",
     itemSpecifics,
     sourceUrl: card.url,
-    raw: { from: "catalog-grid", sku: card.sku },
+    raw: {
+      from: "catalog-grid",
+      sku: card.sku,
+      priceLoginRequired: card.price == null,
+      priceWarning:
+        card.price == null
+          ? "Prix non détecté sur la grille — saisie manuelle ou cookies Utopya."
+          : null,
+    },
   };
 }
 
 export async function discoverCatalogProductUrls(
   rawUrl: string,
+  options?: DiscoverCatalogOptions,
 ): Promise<CatalogDiscoverResult> {
   let validated;
   try {
@@ -113,6 +160,11 @@ export async function discoverCatalogProductUrls(
   }
 
   const isEbay = /ebay\./i.test(validated.hostname);
+  const utopya = isUtopyaUrl(validated.href);
+  const cookies = utopya
+    ? resolveUtopyaCookies(options?.cookies)
+    : undefined;
+
   let pathName = "/";
   try {
     pathName = new URL(validated.href).pathname;
@@ -129,26 +181,73 @@ export async function discoverCatalogProductUrls(
       pathName.replace(/^\//, "").split("/").length >= 2) ||
     classification.kind === "catalog";
 
-  const { html } = await fetchWithScrapingBee({
-    url: validated.href,
+  const startUrl = utopya
+    ? withCatalogListLimit(validated.href, 36)
+    : validated.href;
+
+  const first = await fetchWithScrapingBee({
+    url: startUrl,
     renderJs: true,
     premiumProxy: true,
     countryCode: "fr",
-    waitMs: isEbay ? 3500 : looksLikeCategoryPage ? 4000 : 2000,
+    waitMs: isEbay ? 3500 : looksLikeCategoryPage ? 4500 : 2000,
     blockResources: false,
+    cookies,
+    waitFor: cookies && utopya ? ".price, .product-item-link" : undefined,
   });
 
-  let cards = extractCatalogProductCards(html, validated.href, {
-    max: MAX_CATALOG_PRODUCTS,
-  });
+  const pageUrls = utopya
+    ? extractCatalogPageUrls(first.html, startUrl, { maxPages: 5 })
+    : [startUrl];
+
+  const allCards: CatalogProductCard[] = [];
+  const seenUrl = new Set<string>();
+  const seenSku = new Set<string>();
+
+  const ingest = (html: string, pageUrl: string) => {
+    const cards = extractCatalogProductCards(html, pageUrl, {
+      max: MAX_CATALOG_PRODUCTS,
+    });
+    for (const card of cards) {
+      if (seenUrl.has(card.url)) continue;
+      if (card.sku && seenSku.has(card.sku)) continue;
+      seenUrl.add(card.url);
+      if (card.sku) seenSku.add(card.sku);
+      allCards.push(card);
+      if (allCards.length >= MAX_CATALOG_PRODUCTS) return;
+    }
+  };
+
+  ingest(first.html, startUrl);
+
+  for (const pageUrl of pageUrls) {
+    if (pageUrl === startUrl) continue;
+    if (allCards.length >= MAX_CATALOG_PRODUCTS) break;
+    try {
+      const page = await fetchWithScrapingBee({
+        url: pageUrl,
+        renderJs: true,
+        premiumProxy: true,
+        countryCode: "fr",
+        waitMs: 3500,
+        blockResources: false,
+        cookies,
+        waitFor: cookies && utopya ? ".price, .product-item-link" : undefined,
+      });
+      ingest(page.html, pageUrl);
+    } catch (err) {
+      console.warn("[catalog] page fetch failed", pageUrl, err);
+    }
+  }
+
   let productUrls =
-    cards.length > 0
-      ? cards.map((c) => c.url)
-      : extractCatalogProductLinks(html, validated.href, {
+    allCards.length > 0
+      ? allCards.map((c) => c.url)
+      : extractCatalogProductLinks(first.html, startUrl, {
           max: MAX_CATALOG_PRODUCTS,
         });
 
-  // Une seule retry si rien trouvé
+  // Retry sans limit si vide
   if (productUrls.length === 0 && looksLikeCategoryPage) {
     const retry = await fetchWithScrapingBee({
       url: validated.href,
@@ -157,13 +256,19 @@ export async function discoverCatalogProductUrls(
       countryCode: "fr",
       waitMs: 6500,
       blockResources: false,
+      cookies,
     });
-    cards = extractCatalogProductCards(retry.html, validated.href, {
+    const cards = extractCatalogProductCards(retry.html, validated.href, {
       max: MAX_CATALOG_PRODUCTS,
     });
+    for (const card of cards) {
+      if (seenUrl.has(card.url)) continue;
+      seenUrl.add(card.url);
+      allCards.push(card);
+    }
     productUrls =
-      cards.length > 0
-        ? cards.map((c) => c.url)
+      allCards.length > 0
+        ? allCards.map((c) => c.url)
         : extractCatalogProductLinks(retry.html, validated.href, {
             max: MAX_CATALOG_PRODUCTS,
           });
@@ -175,11 +280,19 @@ export async function discoverCatalogProductUrls(
     );
   }
 
+  console.info("[catalog-discover]", {
+    source: validated.href,
+    pages: pageUrls.length,
+    products: productUrls.length,
+    withPrice: allCards.filter((c) => c.price != null).length,
+    hasCookies: Boolean(cookies),
+  });
+
   return {
     kind: "catalog",
     validatedUrl: validated.href,
     reason: classification.reason,
     productUrls,
-    cards,
+    cards: allCards,
   };
 }

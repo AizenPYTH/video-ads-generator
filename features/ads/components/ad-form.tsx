@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { updateAd } from "@/features/ads/actions";
 import type { AdsRow } from "@/types/database";
+import { formatPriceForStorage } from "@/lib/scraping/parse-price";
 
 const adFormSchema = z.object({
   titre: z.string().max(80, "80 caractères maximum").optional(),
@@ -59,7 +60,7 @@ export function AdForm({ ad, onSuccess }: AdFormProps) {
       titre: data.titre || null,
       description: data.description || null,
       prix_achat: data.prix_achat || null,
-      prix_vente: data.prix_vente || null,
+      prix_vente: formatPriceForStorage(data.prix_vente) ?? null,
       quantite: data.quantite,
       sku: data.sku || null,
       ebay_category_id: data.ebay_category_id || null,

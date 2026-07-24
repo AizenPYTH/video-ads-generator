@@ -15,8 +15,8 @@ export const metadata = {
   title: "Import par URL — Smart Seller",
 };
 
-/** Import catalogue Utopya = 1 scrape + N créations d’annonces */
-export const maxDuration = 120;
+/** Import catalogue Utopya = N scrapes + créations d’annonces */
+export const maxDuration = 300;
 
 export default function CreerUrlPage() {
   return (
@@ -30,7 +30,7 @@ export default function CreerUrlPage() {
 
       <PageHeader
         title="Importer depuis un lien"
-        description="Collez une fiche produit (ex. eBay /itm/…) ou une catégorie / boutique pour importer plusieurs articles."
+        description="Collez l’URL d’une fiche produit ou d’une catégorie / boutique. Compatible avec la plupart des sites e-commerce (Amazon, fournisseurs, marketplaces…)."
       />
 
       <Card className="border-border/70">
@@ -38,7 +38,8 @@ export default function CreerUrlPage() {
           <CardTitle className="text-lg">Adresse web</CardTitle>
           <CardDescription>
             Produit unique : caractéristiques récupérées automatiquement.
-            Boutique ou catégorie : jusqu’à 25 produits listés sur la page.
+            Boutique ou catégorie : jusqu’à 60 produits (pagination prise en
+            charge quand disponible).
           </CardDescription>
         </CardHeader>
         <CardContent>

@@ -3,6 +3,7 @@
  * et de la confiance catégorie (seuil ≥ 94 %).
  */
 import type { AdStatus } from "@/types/ads";
+import { parseFrenchPrice } from "@/lib/scraping/parse-price";
 
 /** Seuil « certain » : confiance plafonnée à 0,94 → READY si ≥ 0,94. */
 export const CATEGORY_READY_CONFIDENCE = 0.94;
@@ -30,7 +31,7 @@ export type ChecklistItem = {
 };
 
 export function buildAdChecklist(input: AdStatusInput): ChecklistItem[] {
-  const price = Number(input.prix_vente);
+  const price = parseFrenchPrice(input.prix_vente);
   const text = (value: unknown) =>
     value == null ? "" : String(value).trim();
 
@@ -45,7 +46,7 @@ export function buildAdChecklist(input: AdStatusInput): ChecklistItem[] {
       id: "prix",
       field: "prix_vente",
       label: "Prix (> 0)",
-      ok: Number.isFinite(price) && price > 0,
+      ok: price != null && price > 0,
     },
     {
       id: "quantite",

@@ -1,6 +1,7 @@
 export interface ScrapedProduct {
   title: string;
   description: string | null;
+  /** null si non trouvé — jamais 0 */
   price: number | null;
   currency: string | null;
   images: string[];
@@ -13,8 +14,13 @@ export interface ScrapedProduct {
   raw: Record<string, unknown>;
 }
 
+export type ScrapeOptions = {
+  /** Cookies session (Utopya) — thread-safe, pas via process.env */
+  cookies?: string | null;
+};
+
 export interface ProductPageProvider {
   readonly name: string;
   canHandle(url: string): boolean;
-  scrape(url: string): Promise<ScrapedProduct>;
+  scrape(url: string, options?: ScrapeOptions): Promise<ScrapedProduct>;
 }

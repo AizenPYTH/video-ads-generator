@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from "fs";
+import { existsSync } from "fs";
 import path from "path";
 import sharp from "sharp";
 import { removeNearWhiteBackground } from "@/lib/images/remove-background";
@@ -21,11 +21,18 @@ export type MarketingTemplateConfig = {
   showBrand?: boolean;
   logoText?: string;
   logoUrl?: string;
+  /** Ancien champ — traité comme frameUrl si frameUrl absent */
   imageUrl?: string;
-  /** Utiliser le cadre d’annonce (défaut true). */
+  /** URL du cadre PNG de l’entreprise (prioritaire) */
+  frameUrl?: string;
+  /** Buffer cadre (tests / usage interne) */
+  frameBuffer?: Buffer;
+  /** Utiliser un cadre (défaut true si un cadre est disponible). */
   useListingFrame?: boolean;
   /** @deprecated Utiliser useListingFrame */
   useSnowolfFrame?: boolean;
+  /** Zone produit dans le cadre (sinon détection / défaut). */
+  frameZone?: { x: number; y: number; w: number; h: number };
 };
 
 export type MarketingGenerationLog = {
@@ -37,20 +44,20 @@ export type MarketingGenerationLog = {
   backgroundReason: string;
   templateGenerated: boolean;
   frameUsed: boolean;
+  customFrame: boolean;
   customLogo: boolean;
   error?: string;
 };
 
 const OUTPUT = 1024;
 /**
- * Zone blanche centrale du cadre Snowwolf (mesurée sur listing-frame.png, 1024²).
- * Le produit est centré exactement dans ce rectangle.
+ * Zone blanche centrale du cadre par défaut (listing-frame.png, 1024²).
  */
-const FRAME_ZONE = { x: 191, y: 177, w: 640, h: 719 };
-/** Remplit la zone blanche avec une petite marge (coins arrondis / badges). */
+const DEFAULT_FRAME_ZONE = { x: 191, y: 177, w: 640, h: 719 };
+/** Remplit la zone blanche avec une petite marge. */
 const PRODUCT_FILL = 0.88;
 
-function getFramePath(): string {
+function getDefaultFramePath(): string {
   return path.join(process.cwd(), "public", "brand", "listing-frame.png");
 }
 
@@ -84,23 +91,30 @@ async function resolveProductBuffer(
 }
 
 /**
- * Rend transparente la zone blanche centrale du cadre pour y placer le produit.
+ * Rend transparente la zone blanche du cadre pour y placer le produit.
+ * Si `zone` est fournie, ne perce que cette zone ; sinon tous les pixels quasi-blancs.
  */
-async function punchProductHole(frame: Buffer): Promise<Buffer> {
+async function punchProductHole(
+  frame: Buffer,
+  zone?: { x: number; y: number; w: number; h: number } | null,
+): Promise<Buffer> {
   const { data, info } = await sharp(frame)
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
 
-  const { x, y, w, h } = FRAME_ZONE;
-  const pad = 8;
-  for (let py = y + pad; py < y + h - pad; py++) {
-    for (let px = x + pad; px < x + w - pad; px++) {
+  const x0 = zone ? zone.x : 0;
+  const y0 = zone ? zone.y : 0;
+  const x1 = zone ? zone.x + zone.w : info.width;
+  const y1 = zone ? zone.y + zone.h : info.height;
+  const pad = zone ? 8 : 0;
+
+  for (let py = y0 + pad; py < y1 - pad; py++) {
+    for (let px = x0 + pad; px < x1 - pad; px++) {
       const i = (py * info.width + px) * info.channels;
       const r = data[i];
       const g = data[i + 1];
       const b = data[i + 2];
-      // Blanc / quasi-blanc uniquement
       if (r > 240 && g > 240 && b > 240) {
         data[i + 3] = 0;
       }
@@ -116,6 +130,49 @@ async function punchProductHole(frame: Buffer): Promise<Buffer> {
   })
     .png()
     .toBuffer();
+}
+
+/**
+ * Estime une zone centrale blanche dans un cadre custom.
+ */
+async function detectWhiteZone(
+  frame: Buffer,
+): Promise<{ x: number; y: number; w: number; h: number }> {
+  const { data, info } = await sharp(frame)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  let minX = info.width;
+  let minY = info.height;
+  let maxX = 0;
+  let maxY = 0;
+  let count = 0;
+
+  for (let y = 0; y < info.height; y++) {
+    for (let x = 0; x < info.width; x++) {
+      const i = (y * info.width + x) * info.channels;
+      if (data[i] > 240 && data[i + 1] > 240 && data[i + 2] > 240) {
+        count += 1;
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  if (count < 1000) {
+    // Pas assez de blanc → zone centrale généreuse
+    return { x: 160, y: 160, w: 704, h: 704 };
+  }
+
+  return {
+    x: minX,
+    y: minY,
+    w: Math.max(100, maxX - minX + 1),
+    h: Math.max(100, maxY - minY + 1),
+  };
 }
 
 function safeHost(url: string): string {
@@ -136,11 +193,12 @@ export async function generateMarketingImage(
     backgroundReason: "non tenté",
     templateGenerated: false,
     frameUsed: false,
+    customFrame: false,
     customLogo: false,
   };
 
   const config = input.template ?? {};
-  const productUrl = input.productImageUrl || config.imageUrl;
+  const productUrl = input.productImageUrl;
   if (!productUrl && !input.productBuffer) {
     log.error = "Aucune image produit fournie.";
     throw new Error(log.error);
@@ -166,15 +224,9 @@ export async function generateMarketingImage(
     const meta = await sharp(productBuffer).metadata();
     log.originalWidth = meta.width;
     log.originalHeight = meta.height;
-    console.info("[marketing] téléchargement réussi", {
-      width: meta.width,
-      height: meta.height,
-      bytes: productBuffer.byteLength,
-    });
   } catch (err) {
     log.downloadOk = false;
     log.error = err instanceof Error ? err.message : "Téléchargement échoué";
-    console.error("[marketing] téléchargement échoué", log.error);
     throw new Error(log.error);
   }
 
@@ -183,10 +235,6 @@ export async function generateMarketingImage(
     productBuffer = cut.buffer;
     log.backgroundRemoved = cut.removed;
     log.backgroundReason = cut.reason;
-    console.info("[marketing] détourage", {
-      removed: cut.removed,
-      reason: cut.reason,
-    });
   } catch (err) {
     log.backgroundRemoved = false;
     log.backgroundReason = "erreur — détourage ignoré";
@@ -196,14 +244,57 @@ export async function generateMarketingImage(
     );
   }
 
-  const framePath = getFramePath();
-  const useFrame =
-    config.useListingFrame !== false &&
-    config.useSnowolfFrame !== false &&
-    existsSync(framePath);
+  const customFrameUrl =
+    (typeof config.frameUrl === "string" && config.frameUrl.trim()) ||
+    (typeof config.imageUrl === "string" && config.imageUrl.trim()) ||
+    null;
 
-  const usableW = Math.round(FRAME_ZONE.w * PRODUCT_FILL);
-  const usableH = Math.round(FRAME_ZONE.h * PRODUCT_FILL);
+  const wantFrame = config.useListingFrame !== false && config.useSnowolfFrame !== false;
+
+  let frameBuffer: Buffer | null = null;
+  let frameZone = config.frameZone ?? DEFAULT_FRAME_ZONE;
+
+  if (wantFrame && config.frameBuffer?.byteLength) {
+    frameBuffer = config.frameBuffer;
+    log.customFrame = true;
+    if (!config.frameZone) {
+      frameZone = await detectWhiteZone(
+        await sharp(frameBuffer)
+          .resize(OUTPUT, OUTPUT, { fit: "fill" })
+          .png()
+          .toBuffer(),
+      );
+    }
+  } else if (wantFrame && customFrameUrl) {
+    try {
+      frameBuffer = await fetchImageBuffer(customFrameUrl);
+      log.customFrame = true;
+      if (!config.frameZone) {
+        frameZone = await detectWhiteZone(
+          await sharp(frameBuffer)
+            .resize(OUTPUT, OUTPUT, { fit: "fill" })
+            .png()
+            .toBuffer(),
+        );
+      }
+    } catch (err) {
+      console.warn(
+        "[marketing] cadre entreprise illisible",
+        err instanceof Error ? err.message : err,
+      );
+      frameBuffer = null;
+    }
+  }
+
+  // Pas de cadre entreprise → pas de cadre Snowwolf imposé
+  if (wantFrame && !frameBuffer) {
+    log.error =
+      "Aucun cadre entreprise configuré. Allez dans Paramètres → Publication → Cadre d’annonce pour uploader le vôtre.";
+    throw new Error(log.error);
+  }
+
+  const usableW = Math.round(frameZone.w * PRODUCT_FILL);
+  const usableH = Math.round(frameZone.h * PRODUCT_FILL);
   const productResized = await sharp(productBuffer)
     .resize(usableW, usableH, {
       fit: "inside",
@@ -216,29 +307,23 @@ export async function generateMarketingImage(
   const pMeta = await sharp(productResized).metadata();
   const pw = pMeta.width ?? usableW;
   const ph = pMeta.height ?? usableH;
-  // Centrage exact dans la zone blanche
-  const left = Math.round(FRAME_ZONE.x + (FRAME_ZONE.w - pw) / 2);
-  const top = Math.round(FRAME_ZONE.y + (FRAME_ZONE.h - ph) / 2);
-
-  console.info("[marketing] placement produit", {
-    zone: FRAME_ZONE,
-    product: { w: pw, h: ph },
-    left,
-    top,
-  });
+  const left = Math.round(frameZone.x + (frameZone.w - pw) / 2);
+  const top = Math.round(frameZone.y + (frameZone.h - ph) / 2);
 
   let result: Buffer;
 
-  if (useFrame) {
+  if (frameBuffer) {
     log.frameUsed = true;
-    const frameRaw = readFileSync(framePath);
-    const frameSized = await sharp(frameRaw)
+    const frameSized = await sharp(frameBuffer)
       .resize(OUTPUT, OUTPUT, { fit: "fill" })
       .png()
       .toBuffer();
-    const framePunched = await punchProductHole(frameSized);
+    // Cadre custom : percer tout le blanc ; cadre défaut : zone mesurée
+    const framePunched = await punchProductHole(
+      frameSized,
+      log.customFrame ? null : frameZone,
+    );
 
-    // Produit au centre → cadre d’annonce par-dessus (badges, footer intacts)
     const base = await sharp({
       create: {
         width: OUTPUT,
@@ -255,41 +340,31 @@ export async function generateMarketingImage(
       .composite([{ input: framePunched, top: 0, left: 0 }])
       .png({ quality: 92 })
       .toBuffer();
-    console.info("[marketing] génération avec cadre d’annonce", {
-      bytes: result.byteLength,
-    });
   } else {
-    // Fallback SVG si le PNG manque
+    // Ne devrait pas arriver (erreur plus haut) — filet de sécurité
     result = await sharp({
       create: {
         width: OUTPUT,
         height: OUTPUT,
         channels: 4,
-        background: { r: 11, g: 31, b: 54, alpha: 1 },
+        background: { r: 255, g: 255, b: 255, alpha: 1 },
       },
     })
-      .composite([
-        {
-          input: Buffer.from(`
-            <svg width="${OUTPUT}" height="${OUTPUT}">
-              <rect x="${FRAME_ZONE.x}" y="${FRAME_ZONE.y}" width="${FRAME_ZONE.w}" height="${FRAME_ZONE.h}" rx="24" fill="white"/>
-              <text x="512" y="80" text-anchor="middle" font-family="Arial" font-size="36" font-weight="700" fill="white">Smart Seller</text>
-            </svg>
-          `),
-          top: 0,
-          left: 0,
-        },
-        { input: productResized, top, left },
-      ])
+      .composite([{ input: productResized, top, left }])
       .png()
       .toBuffer();
   }
 
   log.templateGenerated = true;
-  console.info("[marketing] génération du template OK", {
-    bytes: result.byteLength,
-    frameUsed: log.frameUsed,
-  });
-
   return { buffer: result, log };
+}
+
+/** @deprecated */
+export function getFramePath(): string {
+  return getDefaultFramePath();
+}
+
+/** Conservé pour tests éventuels */
+export function defaultFrameExists(): boolean {
+  return existsSync(getDefaultFramePath());
 }

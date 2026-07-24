@@ -115,7 +115,7 @@ export async function previewMarketingImage(input: {
     const message =
       err instanceof Error
         ? err.message
-        : `Échec de la génération ${APP_NAME}.`;
+        : "Échec de la génération du cadre.";
     console.error("[marketing] preview failed", message);
     return { error: message };
   }

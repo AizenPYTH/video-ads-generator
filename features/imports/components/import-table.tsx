@@ -89,6 +89,73 @@ function confidenceLabel(value?: number): string {
   return `${Math.round(value * 100)} %`;
 }
 
+type DetectedSpecific = { key: string; value: string; source?: string };
+
+function getDetectedSpecifics(data: Record<string, unknown>): DetectedSpecific[] {
+  const raw = data.detected_specifics;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(
+      (s): s is DetectedSpecific =>
+        Boolean(s) &&
+        typeof s === "object" &&
+        typeof (s as DetectedSpecific).key === "string" &&
+        typeof (s as DetectedSpecific).value === "string",
+    )
+    .slice(0, 12);
+}
+
+function getMissingUsefulFields(data: Record<string, unknown>): string[] {
+  const raw = data.missing_useful_fields;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((v): v is string => typeof v === "string").slice(0, 10);
+}
+
+function SpecificsPreview({ data }: { data: Record<string, unknown> }) {
+  const detected = getDetectedSpecifics(data);
+  const missing = getMissingUsefulFields(data);
+  const taxonomyMissing = (
+    asRecord(data.category_resolution).missingAspects as string[] | undefined
+  )?.filter(Boolean);
+
+  if (detected.length === 0 && missing.length === 0 && !taxonomyMissing?.length) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Aucune caractéristique détectée dans le fichier.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {detected.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {detected.map((s) => (
+            <Badge
+              key={`${s.key}-${s.value}`}
+              variant="secondary"
+              className="max-w-[220px] truncate font-normal"
+              title={`${s.key}: ${s.value}${s.source ? ` (${s.source})` : ""}`}
+            >
+              {s.key}: {s.value}
+            </Badge>
+          ))}
+        </div>
+      )}
+      {missing.length > 0 && (
+        <p className="text-xs text-amber-700 dark:text-amber-400">
+          Manquants fichier : {missing.join(", ")}
+        </p>
+      )}
+      {taxonomyMissing && taxonomyMissing.length > 0 && (
+        <p className="text-xs text-destructive">
+          Requis eBay catégorie : {taxonomyMissing.join(", ")}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function CategoryCell({
   adId,
   resolution,
@@ -311,7 +378,7 @@ function RowBlock({
       </div>
 
       <div className="divide-y md:hidden">
-        {items.map(({ row, title: rowTitle, resolution, confidence }) => (
+        {items.map(({ row, data, title: rowTitle, resolution, confidence }) => (
           <article key={row.id} className="space-y-3 p-4">
             <div className="flex items-start gap-3">
               {mode === "reliable" && row.ad_id && (
@@ -356,6 +423,12 @@ function RowBlock({
                     <p className="whitespace-pre-wrap break-words">{row.erreur}</p>
                   </div>
                 )}
+                <div className="mt-2">
+                  <p className="mb-1 text-xs font-medium text-muted-foreground">
+                    Caractéristiques
+                  </p>
+                  <SpecificsPreview data={data} />
+                </div>
                 {row.statut === "SUCCESS" && (
                   <div className="mt-2">
                     <CategoryCell
@@ -387,6 +460,7 @@ function RowBlock({
               )}
               <TableHead className="w-16">Ligne</TableHead>
               <TableHead>Titre</TableHead>
+              <TableHead>Caractéristiques</TableHead>
               <TableHead>Statut</TableHead>
               <TableHead>
                 {mode === "review" ? "Raison" : "Catégorie eBay"}
@@ -395,7 +469,7 @@ function RowBlock({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {items.map(({ row, title: rowTitle, resolution, confidence }) => (
+            {items.map(({ row, data, title: rowTitle, resolution, confidence }) => (
               <TableRow key={row.id} className="align-top">
                 {mode === "reliable" && (
                   <TableCell>
@@ -411,8 +485,11 @@ function RowBlock({
                 <TableCell className="text-muted-foreground">
                   {row.numero_ligne}
                 </TableCell>
-                <TableCell className="max-w-[220px] font-medium">
+                <TableCell className="max-w-[200px] font-medium">
                   <span className="line-clamp-2">{rowTitle}</span>
+                </TableCell>
+                <TableCell className="min-w-[220px] max-w-[320px] py-3">
+                  <SpecificsPreview data={data} />
                 </TableCell>
                 <TableCell>
                   {mode === "review" ? (

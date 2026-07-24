@@ -34,7 +34,7 @@ const choices = [
     icon: Link2,
     title: "À partir d’une URL",
     description:
-      "Collez le lien d’un produit pour récupérer titre, prix et images.",
+      "Collez le lien d’un produit ou d’une boutique (n’importe quel site e-commerce).",
     cta: "Importer depuis une URL",
     featured: false,
   },

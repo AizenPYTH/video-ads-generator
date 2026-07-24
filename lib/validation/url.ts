@@ -1,4 +1,5 @@
 import { AppError, AppErrorCode } from "@/lib/errors/app-error";
+import { coerceImportUrl } from "@/lib/scraping/coerce-url";
 
 const BLOCKED_HOSTNAMES = new Set([
   "localhost",
@@ -65,7 +66,7 @@ export function validateUrl(input: string): ValidatedUrl {
   let parsed: URL;
 
   try {
-    parsed = new URL(input.trim());
+    parsed = new URL(coerceImportUrl(input));
   } catch {
     throw new AppError(AppErrorCode.VALIDATION_ERROR, "Invalid URL format");
   }

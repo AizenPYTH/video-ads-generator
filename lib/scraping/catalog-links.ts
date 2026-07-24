@@ -3,7 +3,8 @@
  * Générique : eBay, Shopify, Magento/Utopya, Amazon.
  */
 
-const MAX_CATALOG_PRODUCTS = 25;
+const MAX_CATALOG_PRODUCTS = 60;
+const MAX_CATALOG_PAGES = 5;
 
 const SKIP_PATH =
   /\/(?:collections?|categor(?:y|ies)|catalog\/category|customer|checkout|cart|search|account|login|wishlist|brand\/|marques?\/|seller|str\/)(?:\/|$)/i;
@@ -174,6 +175,26 @@ export function extractCatalogProductCards(
       const title = titleRaw ? decodeBasicEntities(titleRaw) : null;
       if (!title && !image) continue;
 
+      // Prix Magento sur la carte (souvent absent sans login)
+      const cardHtml = before.slice(-2500) + m[0];
+      const after = html.slice(idx, Math.min(html.length, idx + 1800));
+      const priceWindow = cardHtml + after;
+      const priceMatch =
+        priceWindow.match(
+          /data-price-amount=["']([0-9]+(?:[.,][0-9]+)?)["']/i,
+        ) ||
+        priceWindow.match(
+          /class=["'][^"']*\bprice\b[^"']*["'][^>]*>\s*([0-9]+[.,][0-9]+)\s*€/i,
+        ) ||
+        priceWindow.match(/>(\d{1,5}[.,]\d{2})\s*€</);
+      let price: number | null = null;
+      if (priceMatch?.[1]) {
+        const n = Number.parseFloat(
+          String(priceMatch[1]).replace(/\s/g, "").replace(",", "."),
+        );
+        if (Number.isFinite(n) && n > 0) price = n;
+      }
+
       seen.add(url);
       if (sku) seenSku.add(sku);
       cards.push({
@@ -182,7 +203,7 @@ export function extractCatalogProductCards(
         image: imageNear,
         sku,
         brand,
-        price: null,
+        price,
       });
       if (cards.length >= max) return cards;
     }
@@ -270,4 +291,71 @@ export function extractCatalogProductLinks(
   return [...found].slice(0, max);
 }
 
-export { MAX_CATALOG_PRODUCTS };
+export { MAX_CATALOG_PRODUCTS, MAX_CATALOG_PAGES };
+
+/** Force Magento à lister plus de produits par page. */
+export function withCatalogListLimit(url: string, limit = 36): string {
+  try {
+    const u = new URL(url);
+    if (!u.searchParams.has("product_list_limit")) {
+      u.searchParams.set("product_list_limit", String(limit));
+    }
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
+/** URLs de pagination Magento (?p=2…) présentes dans le HTML. */
+export function extractCatalogPageUrls(
+  html: string,
+  pageUrl: string,
+  options?: { maxPages?: number },
+): string[] {
+  const maxPages = options?.maxPages ?? MAX_CATALOG_PAGES;
+  let base: URL;
+  try {
+    base = new URL(pageUrl);
+  } catch {
+    return [];
+  }
+
+  const found = new Set<string>();
+  found.add(withCatalogListLimit(base.toString()));
+
+  for (const m of html.matchAll(
+    /href=["']([^"']*[?&]p=\d+[^"']*)["']/gi,
+  )) {
+    const abs = absoluteUrl(m[1], base);
+    if (!abs) continue;
+    if (abs.hostname.toLowerCase() !== base.hostname.toLowerCase()) continue;
+    // Même chemin de catégorie
+    if (abs.pathname.replace(/\/$/, "") !== base.pathname.replace(/\/$/, "")) {
+      continue;
+    }
+    found.add(withCatalogListLimit(abs.toString()));
+    if (found.size >= maxPages) break;
+  }
+
+  // Générer p=2..N si toolbar indique plus de produits
+  const totalMatch =
+    html.match(
+      /toolbar-number[^>]*>\s*(\d+)\s*<\/span>\s*produits/i,
+    ) || html.match(/(\d+)\s+produits correspondants/i);
+  const perPageMatch = html.match(
+    /product_list_limit["'=\s]+(\d+)/i,
+  );
+  const total = totalMatch ? Number.parseInt(totalMatch[1], 10) : 0;
+  const perPage = perPageMatch ? Number.parseInt(perPageMatch[1], 10) : 36;
+  if (total > 0 && perPage > 0) {
+    const pages = Math.min(maxPages, Math.ceil(total / perPage));
+    for (let p = 1; p <= pages; p++) {
+      const u = new URL(withCatalogListLimit(base.toString()));
+      if (p === 1) u.searchParams.delete("p");
+      else u.searchParams.set("p", String(p));
+      found.add(u.toString());
+    }
+  }
+
+  return [...found].slice(0, maxPages);
+}

@@ -2,8 +2,13 @@ import { decodeHtmlEntities } from "@/lib/html/decode-entities";
 import { extractJsonLd } from "@/lib/scraping/json-ld";
 import { inferProductTypeFromTitle } from "@/lib/scraping/infer-product-type";
 import { dedupeImageUrls } from "@/lib/images/dedupe";
+import { parseFrenchPrice } from "@/lib/scraping/parse-price";
 import { fetchWithScrapingBee } from "../scrapingbee";
-import type { ProductPageProvider, ScrapedProduct } from "./base";
+import type {
+  ProductPageProvider,
+  ScrapedProduct,
+  ScrapeOptions,
+} from "./base";
 
 export class GenericProductProvider implements ProductPageProvider {
   readonly name = "generic";
@@ -12,7 +17,7 @@ export class GenericProductProvider implements ProductPageProvider {
     return true;
   }
 
-  async scrape(url: string): Promise<ScrapedProduct> {
+  async scrape(url: string, _options?: ScrapeOptions): Promise<ScrapedProduct> {
     const isAmazon = /amazon\.(fr|com|de|co\.uk|it|es|ca)/i.test(url);
     const { html } = await fetchWithScrapingBee({
       url,
@@ -39,19 +44,20 @@ export class GenericProductProvider implements ProductPageProvider {
       extractAmazonFeatureBullets(html);
 
     // Priorité : JSON-LD / Open Graph = vrai produit.
+    // Amazon : images UNIQUEMENT depuis le bloc principal (pas les suggestions).
     // HTML élargi seulement après filtrage des blocs « suggestions ».
+    const galleryHtml = stripRelatedProductSections(html);
     const primaryImages = [
       ...(jsonLd?.image ? normalizeImages(jsonLd.image) : []),
       ...extractOpenGraphImages(html),
-      ...extractAmazonImages(html),
+      ...(isAmazon ? extractAmazonImages(galleryHtml) : []),
     ];
-    const galleryHtml = stripRelatedProductSections(html);
     const secondaryImages =
       primaryImages.length >= 4
         ? []
         : [
             ...extractProductGalleryImages(galleryHtml, url),
-            ...extractHtmlImages(galleryHtml, url),
+            ...(isAmazon ? [] : extractHtmlImages(galleryHtml, url)),
           ];
 
     const rawImages = [...primaryImages, ...secondaryImages];
@@ -108,6 +114,36 @@ export class GenericProductProvider implements ProductPageProvider {
     }
 
     const titleText = decodeHtmlEntities(String(title).trim());
+
+    if (isAmazon) {
+      const color =
+        extractAmazonColor(html) || extractColorFromTitle(titleText);
+      if (color) {
+        itemSpecifics.Color ??= color;
+        itemSpecifics.Couleur ??= color;
+      }
+      const model =
+        extractAmazonModel(html) || extractPhoneModelFromTitle(titleText);
+      if (model) {
+        itemSpecifics.Model ??= model;
+        itemSpecifics.Modèle ??= model;
+      }
+      const storage = extractStorageFromTitle(titleText);
+      if (storage) {
+        itemSpecifics["Capacité de stockage"] ??= storage;
+        itemSpecifics["Storage Capacity"] ??= storage;
+        itemSpecifics["Capacité"] ??= storage;
+      }
+      const brandGuess =
+        brandFromJsonLd ||
+        extractAmazonBrand(html) ||
+        extractBrandFromTitle(titleText);
+      if (brandGuess) {
+        itemSpecifics.Brand ??= brandGuess;
+        itemSpecifics.Marque ??= brandGuess;
+      }
+    }
+
     if (!itemSpecifics.Type) {
       const inferred = inferProductTypeFromTitle(titleText);
       if (inferred) itemSpecifics.Type = inferred;
@@ -124,6 +160,7 @@ export class GenericProductProvider implements ProductPageProvider {
       brand:
         brandFromJsonLd ??
         extractAmazonBrand(html) ??
+        (isAmazon ? extractBrandFromTitle(titleText) : null) ??
         openGraph.siteName ??
         null,
       sku: jsonLd?.sku ?? asinMatch?.[1] ?? null,
@@ -154,7 +191,7 @@ function extractOpenGraph(html: string) {
     description: extractMeta(html, "og:description"),
     image: extractMeta(html, "og:image"),
     siteName: extractMeta(html, "og:site_name"),
-    price: parseFloat(extractMeta(html, "product:price:amount") ?? "") || null,
+    price: parseFrenchPrice(extractMeta(html, "product:price:amount")),
     currency: extractMeta(html, "product:price:currency"),
   };
 }
@@ -182,7 +219,7 @@ function extractOpenGraphImages(html: string): string[] {
 function stripRelatedProductSections(html: string): string {
   let cleaned = html;
   const patterns = [
-    /<(?:aside|section|div)[^>]*(?:id|class)=["'][^"']*(?:related|recommand|recommend|suggest|similar|upsell|cross[-_]?sell|also[-_]?bought|also[-_]?viewed|frequently|you[-_]?may|product[-_]?recommendations?|collection[-_]?products|autres[-_]?produits|vous[-_]?aimerez|complements?|accessoires[-_]?assoc)[^"']*["'][^>]*>[\s\S]*?<\/(?:aside|section|div)>/gi,
+    /<(?:aside|section|div)[^>]*(?:id|class)=["'][^"']*(?:related|recommand|recommend|suggest|similar|upsell|cross[-_]?sell|also[-_]?bought|also[-_]?viewed|frequently|you[-_]?may|product[-_]?recommendations?|collection[-_]?products|autres[-_]?produits|vous[-_]?aimerez|complements?|accessoires[-_]?assoc|selection-related|related_products|ajax-selection|sims-fbt|sp_detail|sponsoredProducts|similarity|customer[-_]?also|comparisons?|HLCXComparison|twister|variation|carousel)[^"']*["'][^>]*>[\s\S]*?<\/(?:aside|section|div)>/gi,
     /<!--\s*(?:related|recommendations?|upsell)[\s\S]*?-->/gi,
   ];
   for (const re of patterns) {
@@ -338,8 +375,14 @@ function normalizeImages(
 function extractAmazonImages(html: string): string[] {
   const urls: string[] = [];
 
+  // Restreindre au bloc image principal Amazon (évite suggestions en bas)
+  const mainBlock =
+    html.match(
+      /<(?:div|span)[^>]*(?:id|class)=["'][^"']*(?:imgTagWrapperId|imageBlock|main-image-container|imageBlockNew_feature_div|landingImage)[^"']*["'][^>]*>[\s\S]{0,80000}/i,
+    )?.[0] ?? html.slice(0, 120_000);
+
   // landingImage data-a-dynamic-image='{"https://...":[...]}'
-  const dynamicMatch = html.match(
+  const dynamicMatch = mainBlock.match(
     /data-a-dynamic-image=["'](\{[^"']+\})["']/i,
   );
   if (dynamicMatch?.[1]) {
@@ -353,25 +396,39 @@ function extractAmazonImages(html: string): string[] {
     }
   }
 
-  // hiRes / large image URLs in scripts
-  const hiResMatches = html.matchAll(
-    /"(?:hiRes|large|mainUrl)"\s*:\s*"(https:\/\/[^"]+)"/gi,
-  );
-  for (const m of hiResMatches) {
-    if (m[1] && !m[1].includes("sprite") && !m[1].includes("grey-pixel")) {
-      urls.push(m[1].replace(/\\u002F/g, "/"));
+  // hiRes / large image URLs in ImageBlock scripts (pas tout le HTML)
+  const scriptChunks = [
+    ...mainBlock.matchAll(
+      /'(?:colorImages|imageGalleryData)'\s*:\s*(\{[\s\S]*?\})\s*[,}]/gi,
+    ),
+    ...mainBlock.matchAll(
+      /"colorImages"\s*:\s*(\{[\s\S]*?\})\s*[,}]/gi,
+    ),
+  ];
+  for (const chunk of scriptChunks.slice(0, 3)) {
+    const hiResMatches = chunk[1]?.matchAll(
+      /"(?:hiRes|large|mainUrl)"\s*:\s*"(https:\/\/[^"]+)"/gi,
+    );
+    if (!hiResMatches) continue;
+    for (const m of hiResMatches) {
+      if (m[1] && !m[1].includes("sprite") && !m[1].includes("grey-pixel")) {
+        urls.push(m[1].replace(/\\u002F/g, "/"));
+      }
     }
   }
 
-  // classic media-amazon image tags
-  const imgMatches = html.matchAll(
-    /https:\/\/m\.media-amazon\.com\/images\/I\/[A-Za-z0-9._%-]+\.(?:jpg|jpeg|png|webp)/gi,
-  );
-  for (const m of imgMatches) {
-    urls.push(m[0].replace(/\._[A-Z0-9,_]+_\./, "."));
+  // Fallback : images media-amazon UNIQUEMENT dans le bloc principal
+  if (urls.length < 2) {
+    const imgMatches = mainBlock.matchAll(
+      /https:\/\/m\.media-amazon\.com\/images\/I\/[A-Za-z0-9._%-]+\.(?:jpg|jpeg|png|webp)/gi,
+    );
+    for (const m of imgMatches) {
+      urls.push(m[0].replace(/\._[A-Z0-9,_]+_\./, "."));
+      if (urls.length >= 8) break;
+    }
   }
 
-  return urls;
+  return urls.slice(0, 8);
 }
 
 function extractAmazonPrice(html: string): number | null {
@@ -437,6 +494,70 @@ function extractAmazonBrand(html: string): string | null {
   );
   if (byline?.[1]) return byline[1].replace(/Store/i, "").trim();
   return null;
+}
+
+function extractAmazonColor(html: string): string | null {
+  const patterns = [
+    /id="inline-twister-expanded-dimension-text-color_name"[^>]*>\s*([^<]+)/i,
+    /(?:selection|selected)[^>]*>\s*Couleur\s*:\s*<\/[^>]+>\s*<[^>]+>\s*([^<]+)/i,
+    /tr\.po-color[\s\S]*?po-break-word[^>]*>([^<]+)/i,
+    /<th[^>]*>\s*Couleur\s*<\/th>\s*<td[^>]*>\s*([^<]+)/i,
+    /<th[^>]*>\s*Color\s*<\/th>\s*<td[^>]*>\s*([^<]+)/i,
+    /"color_name"\s*:\s*"([^"]+)"/i,
+    /"color"\s*:\s*"([^"]+)"/i,
+  ];
+  for (const re of patterns) {
+    const m = html.match(re);
+    const v = m?.[1]?.replace(/\s+/g, " ").trim();
+    if (v && v.length < 60 && !/sélectionner|select/i.test(v)) return v;
+  }
+  return null;
+}
+
+function extractAmazonModel(html: string): string | null {
+  const patterns = [
+    /tr\.po-model_name[\s\S]*?po-break-word[^>]*>([^<]+)/i,
+    /<th[^>]*>\s*Modèle\s*<\/th>\s*<td[^>]*>\s*([^<]+)/i,
+    /<th[^>]*>\s*Model\s*Name\s*<\/th>\s*<td[^>]*>\s*([^<]+)/i,
+    /"model_name"\s*:\s*"([^"]+)"/i,
+  ];
+  for (const re of patterns) {
+    const m = html.match(re);
+    const v = m?.[1]?.replace(/\s+/g, " ").trim();
+    if (v && v.length < 80) return v;
+  }
+  return null;
+}
+
+const KNOWN_COLORS =
+  /\b(noir|black|blanc|white|bleu|blue|rouge|red|vert|green|rose|pink|gris|gray|grey|or|gold|argent|silver|jaune|yellow|violet|purple|orange|beige|marron|brown|titanium|titane|graphite|midnight|starlight|ultramarine|sable|natural|désert|desert)\b/i;
+
+const KNOWN_BRANDS =
+  /\b(Apple|Samsung|Xiaomi|Huawei|Honor|Oppo|OnePlus|Google|Sony|Motorola|Nokia|Realme|Vivo|Asus|Lenovo|Dell|HP|Microsoft|Nintendo|Amazon|Anker|Belkin|JBL|Bosch|Philips|LG|Canon|Nikon)\b/i;
+
+function extractColorFromTitle(title: string): string | null {
+  const m = title.match(KNOWN_COLORS);
+  if (!m?.[1]) return null;
+  const raw = m[1];
+  return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
+}
+
+function extractBrandFromTitle(title: string): string | null {
+  return title.match(KNOWN_BRANDS)?.[1] ?? null;
+}
+
+function extractStorageFromTitle(title: string): string | null {
+  const m = title.match(/\b(\d+)\s*(Go|GB|To|TB)\b/i);
+  if (!m) return null;
+  const unit = /to|tb/i.test(m[2]) ? "To" : "Go";
+  return `${m[1]} ${unit}`;
+}
+
+function extractPhoneModelFromTitle(title: string): string | null {
+  const m = title.match(
+    /\b((?:iPhone|Galaxy|Pixel|Redmi|Xiaomi|Huawei|Honor|OnePlus|Xperia)\s+[A-Za-z0-9]+(?:\s+(?:Pro|Max|Plus|Ultra|FE|Lite))?)/i,
+  );
+  return m?.[1]?.replace(/\s+/g, " ").trim() ?? null;
 }
 
 function extractJsonLdAdditionalProperties(

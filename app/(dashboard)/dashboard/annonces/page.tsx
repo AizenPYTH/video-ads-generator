@@ -28,6 +28,7 @@ type PageProps = {
     group?: string;
     page?: string;
     sort?: string;
+    ids?: string;
   }>;
 };
 
@@ -116,16 +117,29 @@ async function AdsList({
         ? "created_at"
         : "updated_at";
 
+  const ids = (searchParams.ids ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((id) =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        id,
+      ),
+    )
+    .slice(0, 100);
+
   const { ads, totalPages, total } = await fetchAds(user.id, {
     search: searchParams.search,
     group,
+    ids: ids.length > 0 ? ids : undefined,
     page,
-    limit: 50,
+    limit: ids.length > 0 ? Math.max(50, ids.length) : 50,
     sortBy,
   });
 
   if (ads.length === 0) {
-    const filtered = Boolean(searchParams.search || searchParams.group);
+    const filtered = Boolean(
+      searchParams.search || searchParams.group || ids.length > 0,
+    );
     return (
       <EmptyState
         title={filtered ? "Aucune annonce trouvée" : "Aucune annonce"}
@@ -247,36 +261,58 @@ function AdsSkeleton() {
 
 export default async function AnnoncesPage({ searchParams }: PageProps) {
   const params = await searchParams;
+  const idsCount = (params.ids ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean).length;
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Mes annonces"
-        description="Gérez, enrichissez et publiez vos annonces eBay."
+        title={idsCount > 0 ? "Produits importés" : "Mes annonces"}
+        description={
+          idsCount > 0
+            ? `Affichage des ${idsCount} produit${idsCount > 1 ? "s" : ""} de cet import uniquement.`
+            : "Gérez, enrichissez et publiez vos annonces eBay."
+        }
       >
-        <Button variant="outline" asChild>
-          <Link href="/dashboard/creer/import">
-            <FileUp className="mr-2 size-4" />
-            Importer un fichier
-          </Link>
-        </Button>
-        <Button asChild>
-          <Link href="/dashboard/creer">
-            <PlusCircle className="mr-2 size-4" />
-            Créer une annonce
-          </Link>
-        </Button>
+        {idsCount > 0 ? (
+          <Button variant="outline" asChild>
+            <Link href="/dashboard/annonces">Voir toutes les annonces</Link>
+          </Button>
+        ) : (
+          <>
+            <Button variant="outline" asChild>
+              <Link href="/dashboard/creer/import">
+                <FileUp className="mr-2 size-4" />
+                Importer un fichier
+              </Link>
+            </Button>
+            <Button asChild>
+              <Link href="/dashboard/creer">
+                <PlusCircle className="mr-2 size-4" />
+                Créer une annonce
+              </Link>
+            </Button>
+          </>
+        )}
       </PageHeader>
 
-      <Suspense
-        fallback={<Skeleton className="h-[4.5rem] w-full rounded-[var(--ss-radius)]" />}
-      >
-        <AdsStatsStrip />
-      </Suspense>
+      {idsCount === 0 ? (
+        <Suspense
+          fallback={
+            <Skeleton className="h-[4.5rem] w-full rounded-[var(--ss-radius)]" />
+          }
+        >
+          <AdsStatsStrip />
+        </Suspense>
+      ) : null}
 
-      <Suspense fallback={<Skeleton className="h-10 w-full max-w-md" />}>
-        <AdFilters />
-      </Suspense>
+      {idsCount === 0 ? (
+        <Suspense fallback={<Skeleton className="h-10 w-full max-w-md" />}>
+          <AdFilters />
+        </Suspense>
+      ) : null}
 
       <Suspense fallback={<AdsSkeleton />}>
         <AdsList searchParams={params} />
