@@ -27,10 +27,27 @@ export function createApp(): Express {
     cors({
       origin: (origin, callback) => {
         const allowed = isOriginAllowed(env.frontendUrl, origin);
-        if (!allowed) logger.warn({ origin }, "blocked by CORS - add it to FRONTEND_URL");
+        if (!allowed) {
+          // Log what was configured, not just what was blocked: the fix is
+          // always in FRONTEND_URL and this is usually read in a deploy log
+          // with nothing else to go on.
+          logger.warn(
+            { origin, frontendUrl: env.frontendUrl },
+            "blocked by CORS - add this origin to FRONTEND_URL",
+          );
+        }
         callback(null, allowed);
       },
       credentials: true,
+      methods: ["GET", "POST", "OPTIONS"],
+      // `allowedHeaders` is deliberately unset: the default reflects
+      // Access-Control-Request-Headers, so any custom header the client
+      // sends is accepted. Naming them here would narrow that.
+      exposedHeaders: ["Content-Disposition"],
+      // Renders are polled every 1.5s; without this the browser re-runs the
+      // preflight on every poll.
+      maxAge: 86_400,
+      optionsSuccessStatus: 204,
     }),
   );
   app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => req.url === "/health" } }));

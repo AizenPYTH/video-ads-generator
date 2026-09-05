@@ -31,7 +31,10 @@ async function request<T>(
   let response: Response;
   try {
     response = await fetch(`${BASE_URL}/api${path}`, {
-      headers: { "Content-Type": "application/json" },
+      // Only on requests that actually carry a body. `Content-Type:
+      // application/json` on a bodyless GET makes it a non-simple request,
+      // which forces a CORS preflight on every status poll.
+      ...(init?.body ? { headers: { "Content-Type": "application/json" } } : {}),
       ...init,
     });
   } catch (error) {

@@ -215,8 +215,22 @@ assets through it while rendering, so if it still says `localhost` the
 video renders with blank screens — no error, just empty device frames. Set
 it to the backend's own public origin.
 
-`FRONTEND_URL` is a comma-separated allowlist and accepts `*.` wildcards.
-Include `*.vercel.app` or every preview deploy fails CORS.
+`FRONTEND_URL` is a comma-separated allowlist. All of these work and mean
+the same thing, because people write all of them:
+
+```
+https://app.vercel.app   app.vercel.app   https://app.vercel.app/
+*.vercel.app             https://*.vercel.app
+```
+
+Include a `*.vercel.app` entry or every preview deploy fails CORS. A
+leading `*.` matches subdomains but not the apex, so it will not let the
+lookalike `notvercel.app` through. A scheme is honoured when you give one.
+Ports are part of an origin — write `localhost:5173`, not `localhost`.
+
+When a request is refused, the backend logs the rejected origin **and** the
+configured allowlist, so a deploy log on its own is enough to spot the
+mismatch.
 
 Attach a volume at `/app/storage` if you want renders to survive a restart.
 Without one they are regenerated on demand, which is fine.
