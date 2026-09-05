@@ -16,16 +16,30 @@ export type Phase =
   | "capturing"
   | "analysing"
   | "writing"
+  | "choosing"
+  | "customizing"
   | "rendering"
   | "done"
   | "error";
 
+/** The four stages the step indicator shows. */
+export const STEPS = ["Capture", "Concept", "Customise", "Download"] as const;
+
+export function stepOf(phase: Phase): number {
+  if (phase === "idle") return 0;
+  if (phase === "capturing" || phase === "analysing" || phase === "writing") return 0;
+  if (phase === "choosing") return 1;
+  if (phase === "customizing") return 2;
+  return 3;
+}
+
 /**
- * The whole product in one hook: link in, video out.
+ * The whole run in one hook, on one page: link in, video out.
  *
- * Everything the old five-step wizard asked the user to decide is decided
- * here instead - the concept, the look, the device - and only surfaced
- * afterwards, as a change you can make to a video you can already see.
+ * The pipeline never stops for a decision it can make itself - capture,
+ * analysis and the three concepts happen in one go. It then stops twice, and
+ * only where the choice is genuinely the user's: which story to tell, and
+ * how it should look. Both are shown, not described.
  */
 export function useStudio() {
   const store = useProjectStore;
@@ -203,16 +217,25 @@ export function useStudio() {
       }
       state.setStoryboardId(first.id);
 
-      // 4. Render
-      await render({
-        storyboard: first,
-        style: chosenStyle,
-        device: chosenDevice,
-        analysis: fresh,
-      });
+      // 4. Hand over: which of the three, and how it should look.
+      setPhase("choosing");
     },
-    [store, fail, render],
+    [store, fail],
   );
+
+  const chooseConcept = useCallback(
+    (storyboardId: string) => {
+      store.getState().setStoryboardId(storyboardId);
+      setPhase("customizing");
+    },
+    [store],
+  );
+
+  const backToConcepts = useCallback(() => setPhase("choosing"), []);
+
+  const startRender = useCallback(async () => {
+    await render();
+  }, [render]);
 
   const cancel = useCallback(() => {
     abortRef.current?.abort();
@@ -259,6 +282,7 @@ export function useStudio() {
   );
 
   return {
+    step: stepOf(effectivePhase),
     phase: effectivePhase,
     error: error ?? (failed ? (status?.error ?? "The render failed.") : null) ?? pollError,
     assets,
@@ -271,6 +295,9 @@ export function useStudio() {
     status,
     estimate,
     run,
+    chooseConcept,
+    backToConcepts,
+    startRender,
     cancel,
     startOver,
     changeAndRerender,

@@ -5,6 +5,13 @@
  * structured-output modes reject partially-required objects.
  */
 import { z } from "zod";
+import { coerceEnum, coerceNumber, coerceString } from "./coerce";
+import {
+  MAX_SCENE_DURATION,
+  MAX_TOTAL_DURATION,
+  MIN_SCENE_DURATION,
+  MIN_TOTAL_DURATION,
+} from "../utils/constants";
 
 const HEX = /^#?[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/;
 
@@ -273,45 +280,131 @@ export const storyboardsJsonSchema = {
   },
 } as const;
 
-const rawActionSchema = z.object({
-  type: z.enum(["display", "animation", "text", "effect"]),
-  target: z.string().nullish(),
-  content: z.string().nullish(),
-  position: z.enum(TEXT_POSITIONS).nullish(),
-  animation: z.enum(ANIMATION_TYPES).nullish(),
-  effect: z.enum(VISUAL_EFFECTS).nullish(),
-  easing: z.enum(EASING_TYPES).nullish(),
-  duration: z.number().positive(),
-  delay: z.number().nullish(),
+export const ACTION_TYPES = [
+  "display",
+  "animation",
+  "text",
+  "effect",
+] as const;
+
+/**
+ * The draft schemas are deliberately permissive. Claude is dependable about
+ * narrative and undependable about vocabulary - it writes `zoom` for
+ * `zoomIn`, `middle` for `center`, leaves `concept` out entirely - and a
+ * hard `z.enum` threw away three usable storyboards over one misspelling.
+ *
+ * Nothing below rejects. Every field is pulled to the nearest legal value,
+ * so parsing always yields something renderable; `storyboard.service` then
+ * owns the arithmetic (durations, ids, asset targets).
+ */
+const rawActionSchema = z.unknown().transform((value) => {
+  const raw = (value ?? {}) as Record<string, unknown>;
+  const type = coerceEnum(raw.type, ACTION_TYPES, "display");
+  return {
+    type,
+    target: coerceString(raw.target, "") || null,
+    content: coerceString(raw.content, "") || null,
+    position: coerceEnum(raw.position, TEXT_POSITIONS, "bottom"),
+    animation: coerceEnum(raw.animation, ANIMATION_TYPES, "fadeIn"),
+    effect: coerceEnum(raw.effect, VISUAL_EFFECTS, "particles"),
+    easing: coerceEnum(raw.easing, EASING_TYPES, "easeOut"),
+    duration: coerceNumber(raw.duration, 2, 0.2, MAX_SCENE_DURATION),
+    delay: coerceNumber(raw.delay, 0, 0, 5),
+  };
 });
 
-const rawSceneSchema = z.object({
-  id: z.number().int().nullish(),
-  name: z.string().min(1),
-  duration: z.number().positive(),
-  description: z.string().default(""),
-  actions: z.array(rawActionSchema).min(1),
-  textOverlay: z
-    .object({
-      content: z.string(),
-      position: z.enum(TEXT_POSITIONS).default("bottom"),
-      fontSize: z.number().default(56),
-      color: z.string().default("#FFFFFF"),
-      animation: z.enum(ANIMATION_TYPES).default("fadeIn"),
-    })
-    .nullish(),
+const rawTextOverlaySchema = z.unknown().transform((value) => {
+  const raw = (value ?? {}) as Record<string, unknown>;
+  const content = coerceString(raw.content, "");
+  if (!content) return null;
+  return {
+    content,
+    position: coerceEnum(raw.position, TEXT_POSITIONS, "bottom"),
+    fontSize: coerceNumber(raw.fontSize, 56, 24, 120),
+    color: coerceString(raw.color, "#FFFFFF"),
+    animation: coerceEnum(raw.animation, ANIMATION_TYPES, "fadeIn"),
+  };
 });
 
-export const rawStoryboardSchema = z.object({
-  title: z.string().min(1),
-  concept: z.string().min(1),
-  description: z.string().default(""),
-  totalDuration: z.number().positive(),
-  scenes: z.array(rawSceneSchema).min(2),
+const rawSceneSchema = z.unknown().transform((value, ctx) => {
+  const raw = (value ?? {}) as Record<string, unknown>;
+  const actions = Array.isArray(raw.actions)
+    ? raw.actions.map((action) => rawActionSchema.parse(action))
+    : [];
+
+  const name = coerceString(raw.name, "Scene");
+  const overlay = rawTextOverlaySchema.parse(raw.textOverlay);
+
+  // A scene with neither a shot nor a line is not a scene.
+  if (actions.length === 0 && !overlay) {
+    ctx.addIssue({ code: "custom", message: "scene has no actions and no text" });
+    return z.NEVER;
+  }
+
+  return {
+    id: Math.round(coerceNumber(raw.id, 0, 0, 999)) || null,
+    name,
+    duration: coerceNumber(
+      raw.duration,
+      2,
+      MIN_SCENE_DURATION,
+      MAX_SCENE_DURATION,
+    ),
+    description: coerceString(raw.description, ""),
+    actions,
+    textOverlay: overlay,
+  };
 });
 
+/** One of the three narrative shapes the prompt asks for. */
+export const CONCEPTS = [
+  "Problem to Solution",
+  "Feature Showcase",
+  "Hero Shot + Benefit",
+] as const;
+
+export const rawStoryboardSchema = z.unknown().transform((value, ctx) => {
+  const raw = (value ?? {}) as Record<string, unknown>;
+
+  const scenes = (Array.isArray(raw.scenes) ? raw.scenes : [])
+    .map((scene) => rawSceneSchema.safeParse(scene))
+    .filter((result) => result.success)
+    .map((result) => result.data);
+
+  // Without scenes there is nothing to render; this is the one real failure.
+  if (scenes.length === 0) {
+    ctx.addIssue({ code: "custom", message: "storyboard has no usable scenes" });
+    return z.NEVER;
+  }
+
+  return {
+    title: coerceString(raw.title, "Untitled concept").slice(0, 70),
+    // Reported missing in production, which sank the whole batch.
+    concept: coerceString(raw.concept, "Feature Showcase").slice(0, 90),
+    description: coerceString(raw.description, ""),
+    totalDuration: coerceNumber(
+      raw.totalDuration,
+      12,
+      MIN_TOTAL_DURATION,
+      MAX_TOTAL_DURATION,
+    ),
+    scenes,
+  };
+});
+
+/**
+ * Salvages the batch. `z.array(...)` fails the whole array when one element
+ * fails, which is exactly the behaviour that turned a single bad storyboard
+ * into a dead request - so elements are parsed one by one and the
+ * unsalvageable ones are dropped.
+ */
 export const storyboardsResultSchema = z.object({
-  storyboards: z.array(rawStoryboardSchema).min(1),
+  storyboards: z.unknown().transform((value) =>
+    (Array.isArray(value) ? value : [])
+      .map((item) => rawStoryboardSchema.safeParse(item))
+      .filter((result) => result.success)
+      .map((result) => result.data),
+  ),
 });
 
 export type RawStoryboard = z.infer<typeof rawStoryboardSchema>;

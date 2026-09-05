@@ -207,9 +207,25 @@ HARD RULES
 - Set unused fields to null explicitly.
 - The final scene of every storyboard ends on a call to action.
 
-STORYBOARD 1 - PROBLEM TO SOLUTION: open on the pain, turn on the product, close on relief. Arc: frustration -> relief.
-STORYBOARD 2 - FEATURE SHOWCASE: three or four features in rapid sequence with callouts. Arc: "here is everything you get".
-STORYBOARD 3 - HERO SHOT + BENEFIT: open on the most impressive frame, then cascade into outcomes and ROI. Arc: "this is powerful and it is easy".`;
+CONTROLLED VOCABULARY - use these exact strings, nothing else
+- "concept" is REQUIRED on every storyboard and is exactly one of:
+  "Problem to Solution" | "Feature Showcase" | "Hero Shot + Benefit"
+- "type": display | animation | text | effect
+- "animation": zoomIn | zoomOut | slideInLeft | slideInRight | slideInTop |
+  slideInBottom | fadeIn | fadeOut | scaleUp | scaleDown | rotateIn |
+  rotateOut | pulse | bounce | shake
+- "easing": linear | easeIn | easeOut | easeInOut | easeInCubic |
+  easeOutCubic | easeInQuad | easeOutQuad
+- "effect": particles | glitch | lightFlare | motionBlur | chromaShift
+- "position": top | center | bottom | top-left | top-right | bottom-left |
+  bottom-right
+
+Any other value for these fields is invalid. Do not invent synonyms, do not
+use CamelCase variants, do not leave "concept" out.
+
+STORYBOARD 1 - concept "Problem to Solution": open on the pain, turn on the product, close on relief. Arc: frustration -> relief.
+STORYBOARD 2 - concept "Feature Showcase": three or four features in rapid sequence with callouts. Arc: "here is everything you get".
+STORYBOARD 3 - concept "Hero Shot + Benefit": open on the most impressive frame, then cascade into outcomes and ROI. Arc: "this is powerful and it is easy".`;
 
 export interface StoryboardInput {
   analysis: ProductAnalysis;
@@ -261,16 +277,31 @@ Write the three storyboards.`;
     label: "storyboard generation",
   });
 
-  try {
-    return storyboardsResultSchema.parse(raw).storyboards;
-  } catch (error) {
-    // Claude sometimes answers with a bare array instead of the wrapper.
-    if (Array.isArray(raw)) {
-      return storyboardsResultSchema.parse({ storyboards: raw }).storyboards;
-    }
-    logger.error({ error }, "storyboard validation failed");
+  // Claude sometimes answers with a bare array instead of the wrapper.
+  const wrapped = Array.isArray(raw) ? { storyboards: raw } : raw;
+  const parsed = storyboardsResultSchema.safeParse(wrapped);
+
+  if (!parsed.success) {
+    logger.error({ error: parsed.error }, "storyboard validation failed");
     throw new Error("Claude returned storyboards that failed validation", {
-      cause: error,
+      cause: parsed.error,
     });
   }
+
+  // A storyboard is only dropped when it has no usable scene at all. One bad
+  // apple must not sink the batch, so report and carry on with the rest.
+  const drafts = parsed.data.storyboards;
+  const received = (wrapped as { storyboards?: unknown }).storyboards;
+  const requested = Array.isArray(received) ? received.length : 0;
+  if (drafts.length < requested) {
+    logger.warn(
+      { kept: drafts.length, received: requested },
+      "dropped storyboards with no usable scenes",
+    );
+  }
+  if (drafts.length === 0) {
+    logger.error("every storyboard came back unusable - falling back");
+    return buildFallbackStoryboards(input.analysis, input.assets);
+  }
+  return drafts;
 }
