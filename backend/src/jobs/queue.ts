@@ -70,6 +70,10 @@ class RedisQueue<T> implements JobQueue<T> {
     this.queue = new Bull<T>(name, redisUrl, {
       defaultJobOptions: {
         attempts: 1,
+        // A render that has not finished in ten minutes is stuck, not slow:
+        // the worst measured job is under three. Without a cap a wedged
+        // headless Chrome holds the single-concurrency queue indefinitely.
+        timeout: 10 * 60 * 1000,
         removeOnComplete: 50,
         removeOnFail: 50,
       },

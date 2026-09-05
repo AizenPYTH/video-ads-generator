@@ -16,11 +16,25 @@ import type { ApiResponse, GenerationRequest, GenerationResponse } from "../type
 
 const router = Router();
 
+/**
+ * Links are trusted as free text here and normalised at render time - a
+ * rejected URL should cost the ad its closing card, never the whole render.
+ */
+const metadataSchema = z
+  .object({
+    productUrl: z.string().optional(),
+    appStoreUrl: z.string().optional(),
+    googlePlayUrl: z.string().optional(),
+    appName: z.string().optional(),
+  })
+  .optional();
+
 const generateSchema = z.object({
   storyboard: storyboardSchema,
   style: z.enum(VIDEO_STYLES),
   device: z.enum(DEVICE_TYPES),
   analysis: productAnalysisSchema,
+  metadata: metadataSchema,
 });
 
 /** Rough wall-clock estimate; the UI uses it only to seed the progress copy. */
@@ -43,6 +57,7 @@ router.post(
       style: body.style,
       device: body.device,
       productAnalysis: body.analysis as GenerationRequest["productAnalysis"],
+      ...(body.metadata ? { metadata: body.metadata } : {}),
     };
 
     const jobId = generateId();

@@ -113,7 +113,8 @@ URL ──► Playwright ──► 7 captures ──► Claude vision ──► 
 | `POST` | `/api/upload`                         | `{url}` or `{screenshots:[dataUri]}` → capture session |
 | `POST` | `/api/analyze`                        | `{uploadId}` → `ProductAnalysis`                   |
 | `POST` | `/api/storyboards`                    | `{analysis, style, device}` → 3 storyboards        |
-| `POST` | `/api/generate`                       | `{storyboard, style, device, analysis}` → `jobId`  |
+| `POST` | `/api/generate`                       | `{storyboard, style, device, analysis, metadata?}` → `jobId` |
+| `GET`  | `/api/appstore?term=`                 | App Store search, proxied → `{matches}`            |
 | `GET`  | `/api/video/:jobId/status`            | progress, message, outputs, poster                 |
 | `GET`  | `/api/video/:jobId/download/:format`  | `9x16` \| `16x9` \| `1x1` → MP4 attachment         |
 | `GET`  | `/media/:bucket/:file`                | captures, renders, posters                         |
@@ -131,6 +132,45 @@ data-driven composition** — the storyboard JSON is the input, not a code
 generator prompt. Three compositions are registered (`VideoAd-9x16`,
 `VideoAd-16x9`, `VideoAd-1x1`) sharing the same responsive component:
 portrait puts the copy under the device, landscape puts it in a left column.
+
+### The three acts
+
+`DeviceAnimationComposition` plays the ad in three acts, and everything else
+is derived from their two frame boundaries so nothing can drift apart:
+
+| Act | Share | At 10s | What happens |
+| --- | --- | --- | --- |
+| Intro | 20%, capped at 2s | 0–2s | The device arrives: a phone swings in from a 48° yaw, a MacBook lid opens, a monitor settles out of a 14° turn. |
+| Content | the rest | 2–7s | Screenshots crossfade inside the screen and scroll like a page under a thumb — every 1.5s on a phone, 1.2s on a laptop or monitor — while the storyboard's copy plays over the top. The device never fully stops: yaw, tilt and breath run on three coprime cycles so the idle loop never reads as a loop. |
+| Outro | 30%, capped at 3s | 7–10s | The device pulls back and the screen dims; the last 1.5s is the call to action. |
+
+A shorter or longer storyboard compresses or stretches proportionally —
+`phasesFor` is pure and unit-tested at every length from 1s to 30s.
+
+The MacBook lid is real 3D, not a crossfade: the deck is tipped 72° out of
+the camera plane and the lid rotates about the hinge from −108° (folded shut,
+aluminium back to camera) to +8° (open, leaning back), passing −90° where the
+screen turns to face the viewer. `backface-visibility` picks the face, so the
+closed lid shows its back and the open one shows the screen with no
+bookkeeping.
+
+### Where the ad sends people
+
+The last beat is a call to action: a headline, the link, and a QR code of it.
+`resolveCta` picks the one destination:
+
+- a phone or tablet mockup goes to the store listing when there is one,
+  because that is where a viewer holding a phone goes next;
+- a laptop or monitor goes to the site;
+- each falls back to the other, and both fall back to the page that was
+  captured, so the outro is never blank.
+
+The user supplies `productUrl` / `appStoreUrl` / `googlePlayUrl` in the
+options panel, or lets `GET /api/appstore` find the App Store listing by
+name. Links that are not http(s) are dropped rather than printed — a QR code
+pointing at a `javascript:` URL is the case that matters. The QR code is
+rendered once per job on the server (`utils/qrcode.ts`), not once per frame
+in the browser.
 
 ### Memory
 
@@ -297,5 +337,8 @@ output, but the image itself is unbuilt. Expect to iterate on the first
   the UI says so and points at the screenshot upload path.
 - Scene editing is read-only in this version. The storyboard page shows exactly
   what will render, so what you approve is what you get.
+- The App Store lookup searches by name, so a common name can return the wrong
+  app. The matches are shown with icon and publisher for that reason, and the
+  field stays editable.
 - No audio track. Storyboards carry a `voiceOver` field that nothing consumes
   yet.

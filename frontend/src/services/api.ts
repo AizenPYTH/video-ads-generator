@@ -4,6 +4,8 @@ import type {
   GenerationResponse,
   ProductAnalysis,
   StatusResponse,
+  AppStoreMatch,
+  ProductMetadata,
   Storyboard,
   StoryboardsResponse,
   UploadResponse,
@@ -101,11 +103,19 @@ export const api = {
     style: VideoStyle;
     device: DeviceType;
     analysis: ProductAnalysis;
+    metadata?: ProductMetadata;
   }) =>
     request<GenerationResponse>("/generate", {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
+  /** App Store lookup, proxied by the API so it is not a CORS problem. */
+  appStore: (term: string, signal?: AbortSignal) =>
+    request<{ matches: AppStoreMatch[] }>(
+      `/appstore?term=${encodeURIComponent(term)}`,
+      { method: "GET", ...(signal ? { signal } : {}) },
+    ),
 
   status: (jobId: string, signal?: AbortSignal) =>
     request<StatusResponse>(`/video/${jobId}/status`, {

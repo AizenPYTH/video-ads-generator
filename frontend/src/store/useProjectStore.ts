@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import type {
   DeviceType,
   ProductAnalysis,
+  ProductMetadata,
   Storyboard,
   VideoStyle,
 } from "@/types";
@@ -22,6 +23,8 @@ interface ProjectState {
   device: DeviceType;
   styleTouched: boolean;
   deviceTouched: boolean;
+  /** Links the ad closes on. `productUrl` is seeded from the captured page. */
+  metadata: ProductMetadata;
   jobId: string | null;
 
   setSourceLabel: (label: string | null) => void;
@@ -30,6 +33,7 @@ interface ProjectState {
   setStoryboardId: (id: string | null) => void;
   setStyle: (style: VideoStyle, touched?: boolean) => void;
   setDevice: (device: DeviceType, touched?: boolean) => void;
+  setMetadata: (patch: Partial<ProductMetadata>) => void;
   setJobId: (jobId: string | null) => void;
   reset: () => void;
 }
@@ -43,6 +47,7 @@ const initial = {
   device: "iphone_15_pro" as DeviceType,
   styleTouched: false,
   deviceTouched: false,
+  metadata: {} as ProductMetadata,
   jobId: null,
 };
 
@@ -58,6 +63,8 @@ export const useProjectStore = create<ProjectState>()(
         set({ style, ...(touched ? { styleTouched: true } : {}) }),
       setDevice: (device, touched = true) =>
         set({ device, ...(touched ? { deviceTouched: true } : {}) }),
+      setMetadata: (patch) =>
+        set((state) => ({ metadata: { ...state.metadata, ...patch } })),
       setJobId: (jobId) => set({ jobId }),
       reset: () => set({ ...initial }),
     }),

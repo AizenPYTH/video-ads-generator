@@ -11,6 +11,8 @@ import {
   ASPECT_TO_OUTPUT_KEY,
   DEVICE_SPECS,
 } from "../utils/constants";
+import { resolveCta } from "../utils/cta";
+import { generateQrCode } from "../utils/qrcode";
 import { bucketDir } from "./storage.service";
 import * as ffmpeg from "./ffmpeg.service";
 import type {
@@ -98,10 +100,20 @@ export function assetsForDevice(
   return aliased;
 }
 
-export function buildInputProps(
+/**
+ * Async because of the QR code: it is rendered once per job here rather than
+ * inside the composition, which runs in a browser and once per frame.
+ */
+export async function buildInputProps(
   request: GenerationRequest,
-): VideoCompositionProps {
+): Promise<VideoCompositionProps> {
   const assets = assetsForDevice(request.productAnalysis.assets, request.device);
+  const resolved = resolveCta(
+    request.device,
+    request.metadata,
+    request.productAnalysis,
+  );
+
   return {
     storyboard: { ...request.storyboard, style: request.style, device: request.device },
     style: request.style,
@@ -109,6 +121,14 @@ export function buildInputProps(
     palette: request.productAnalysis.colorPalette,
     assets,
     productName: request.productAnalysis.name,
+    cta: resolved
+      ? {
+          headline: resolved.headline,
+          url: resolved.url,
+          hint: resolved.hint,
+          qrCode: await generateQrCode(resolved.target),
+        }
+      : null,
   };
 }
 
@@ -179,7 +199,7 @@ export async function renderVideo(options: RenderOptions): Promise<{
 }> {
   const { jobId, request, onProgress } = options;
   const serveUrl = await getBundle();
-  const inputProps = buildInputProps(request);
+  const inputProps = await buildInputProps(request);
   const dir = bucketDir("videos");
   await fs.mkdir(dir, { recursive: true });
 

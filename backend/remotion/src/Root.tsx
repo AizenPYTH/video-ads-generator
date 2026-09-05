@@ -1,6 +1,6 @@
 import React from "react";
 import { Composition } from "remotion";
-import { VideoComposition } from "./VideoComposition";
+import { DeviceAnimationComposition } from "./DeviceAnimationComposition";
 import { defaultProps } from "./defaultProps";
 import { ASPECT_DIMENSIONS, FPS } from "../../src/utils/constants";
 import type { AspectRatio, VideoCompositionProps } from "../../src/types";
@@ -30,7 +30,7 @@ export const RemotionRoot: React.FC = () => (
         <Composition
           key={ratio}
           id={COMPOSITION_IDS[ratio]}
-          component={VideoComposition}
+          component={DeviceAnimationComposition}
           durationInFrames={Math.round(defaultProps.storyboard.totalDuration * FPS)}
           fps={FPS}
           width={size.width}

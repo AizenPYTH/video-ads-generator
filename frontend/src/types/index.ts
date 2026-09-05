@@ -210,6 +210,27 @@ export interface Storyboard {
   scenes: Scene[];
 }
 
+// ====== LINKS SHOWN AT THE END OF THE AD ======
+
+/**
+ * Where the viewer should go next. Every field is optional: with none of
+ * them the ad still closes on the page we captured.
+ */
+export interface ProductMetadata {
+  productUrl?: string;
+  appStoreUrl?: string;
+  googlePlayUrl?: string;
+  appName?: string;
+}
+
+/** One App Store search hit, from `GET /api/appstore`. */
+export interface AppStoreMatch {
+  name: string;
+  appStoreUrl: string;
+  icon: string | null;
+  publisher: string;
+}
+
 // ====== VIDEO GENERATION ======
 
 export type AspectRatio = "9:16" | "16:9" | "1:1";
@@ -219,6 +240,7 @@ export interface GenerationRequest {
   style: VideoStyle;
   device: DeviceType;
   productAnalysis: ProductAnalysis;
+  metadata?: ProductMetadata;
 }
 
 export type JobStatus =

@@ -3,12 +3,19 @@ import { ArrowLeft, Clapperboard } from "lucide-react";
 import { Button } from "@/components/Common/Button";
 import { Spinner } from "@/components/Common/Loader";
 import { DeviceMockup } from "./DeviceMockup";
+import { MetadataForm } from "./MetadataForm";
 import { deviceIsWide } from "./deviceSpecs";
 import { assetsForDevice } from "@/utils/assets";
 import { Timeline, ScenePreview } from "./Timeline";
 import { cn } from "@/lib/utils";
 import { DEVICE_LABELS, STYLE_LABELS } from "@/utils/formatting";
-import type { AssetRef, DeviceType, Storyboard, VideoStyle } from "@/types";
+import type {
+  AssetRef,
+  DeviceType,
+  ProductMetadata,
+  Storyboard,
+  VideoStyle,
+} from "@/types";
 
 const STYLES = Object.keys(STYLE_LABELS) as VideoStyle[];
 const DEVICES = Object.keys(DEVICE_LABELS) as DeviceType[];
@@ -25,9 +32,12 @@ export const CustomizePanel: React.FC<{
   assets: AssetRef[];
   style: VideoStyle;
   device: DeviceType;
+  metadata: ProductMetadata;
+  productName: string;
   busy: boolean;
   onStyle: (style: VideoStyle) => void;
   onDevice: (device: DeviceType) => void;
+  onMetadata: (patch: Partial<ProductMetadata>) => void;
   onBack: () => void;
   onGenerate: () => void;
 }> = ({
@@ -35,9 +45,12 @@ export const CustomizePanel: React.FC<{
   assets,
   style,
   device,
+  metadata,
+  productName,
   busy,
   onStyle,
   onDevice,
+  onMetadata,
   onBack,
   onGenerate,
 }) => {
@@ -156,6 +169,13 @@ export const CustomizePanel: React.FC<{
               ))}
             </div>
           </fieldset>
+
+          <MetadataForm
+            metadata={metadata}
+            productName={productName}
+            disabled={busy}
+            onChange={onMetadata}
+          />
         </div>
       </div>
 

@@ -3,6 +3,12 @@ import type { VideoCompositionProps } from "../../src/types";
 /** Only used by `remotion studio` so the compositions open with something. */
 export const defaultProps: VideoCompositionProps = {
   productName: "Acme",
+  cta: {
+    headline: "Visit Acme",
+    url: "acme.example",
+    hint: "Scan to open",
+    qrCode: null,
+  },
   style: "apple_premium",
   device: "iphone_15_pro",
   palette: {
@@ -28,19 +34,19 @@ export const defaultProps: VideoCompositionProps = {
     description: "Placeholder storyboard for the Remotion studio.",
     style: "apple_premium",
     device: "iphone_15_pro",
-    totalDuration: 6,
+    totalDuration: 10,
     scenes: [
       {
         id: 1,
         name: "Hero",
-        duration: 3,
+        duration: 5,
         description: "Push in on the product.",
         actions: [
           {
             type: "display",
             target: "screenshot_main",
             animation: "zoomIn",
-            duration: 3,
+            duration: 5,
             easing: "easeOut",
             delay: 0,
           },
@@ -56,14 +62,14 @@ export const defaultProps: VideoCompositionProps = {
       {
         id: 2,
         name: "Close",
-        duration: 3,
+        duration: 5,
         description: "Land on the CTA.",
         actions: [
           {
             type: "display",
             target: "screenshot_main",
             animation: "scaleUp",
-            duration: 3,
+            duration: 5,
             easing: "easeOutCubic",
             delay: 0,
           },

@@ -10,20 +10,35 @@ function num(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+/**
+ * Blank means unset.
+ *
+ * `.env.example` lists every optional key with an empty value so operators
+ * can see what exists, and `dotenv` loads those as `""` rather than leaving
+ * them undefined - so `??` would hand the rest of the app an empty string
+ * where it expects a default. Anyone who copies the example file gets that,
+ * which makes this the failure mode most likely to reach production.
+ */
+function str(value: string | undefined, fallback: string): string {
+  const trimmed = (value ?? "").trim();
+  return trimmed === "" ? fallback : trimmed;
+}
+
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   port: num(process.env.PORT, 3001),
-  frontendUrl: process.env.FRONTEND_URL ?? "http://localhost:5173",
+  frontendUrl: str(process.env.FRONTEND_URL, "http://localhost:5173"),
   /**
    * Base URL headless Chrome uses to load capture assets during rendering.
    * Must be reachable from the machine running the renderer.
    */
-  publicBaseUrl:
-    process.env.PUBLIC_BASE_URL ??
+  publicBaseUrl: str(
+    process.env.PUBLIC_BASE_URL,
     `http://127.0.0.1:${num(process.env.PORT, 3001)}`,
-  anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
-  anthropicModel: process.env.ANTHROPIC_MODEL ?? "claude-opus-5",
-  anthropicFastModel: process.env.ANTHROPIC_FAST_MODEL ?? "claude-sonnet-5",
+  ),
+  anthropicApiKey: str(process.env.ANTHROPIC_API_KEY, ""),
+  anthropicModel: str(process.env.ANTHROPIC_MODEL, "claude-opus-5"),
+  anthropicFastModel: str(process.env.ANTHROPIC_FAST_MODEL, "claude-sonnet-5"),
   storageDir: process.env.STORAGE_DIR
     ? path.resolve(PROJECT_ROOT, process.env.STORAGE_DIR)
     : path.join(PROJECT_ROOT, "storage"),
@@ -53,7 +68,7 @@ export const env = {
   /** x264 quality. Higher is smaller and cheaper to encode. */
   videoCrf: num(process.env.VIDEO_CRF, 28),
   /** x264 speed preset. Faster presets use less memory for motion search. */
-  x264Preset: process.env.X264_PRESET ?? "veryfast",
+  x264Preset: str(process.env.X264_PRESET, "veryfast"),
   /** Full Chromium used by Playwright for scraping. */
   browserExecutable: process.env.BROWSER_EXECUTABLE ?? "",
   /**

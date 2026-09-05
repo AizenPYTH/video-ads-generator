@@ -8,7 +8,12 @@ import { logger } from "../utils/logger";
  * ffmpeg; PATH is still honoured when an operator sets FFMPEG_PATH.
  */
 export const ffmpegPath: string =
-  process.env.FFMPEG_PATH ?? (ffmpegStatic as unknown as string) ?? "ffmpeg";
+  // `||`, not `??`: `.env.example` ships `FFMPEG_PATH=` and dotenv loads that
+  // as an empty string, which spawn() rejects with "the argument 'file'
+  // cannot be empty" halfway through a render.
+  process.env.FFMPEG_PATH?.trim() ||
+  (ffmpegStatic as unknown as string) ||
+  "ffmpeg";
 
 export class FfmpegError extends Error {
   constructor(

@@ -204,6 +204,34 @@ export interface Storyboard {
   scenes: Scene[];
 }
 
+// ====== LINKS SHOWN AT THE END OF THE AD ======
+
+/**
+ * Where the viewer should go next. Every field is optional because the run
+ * has to work when the user gives us nothing but a URL - `productUrl` then
+ * falls back to the page we captured.
+ */
+export interface ProductMetadata {
+  productUrl?: string;
+  appStoreUrl?: string;
+  googlePlayUrl?: string;
+  appName?: string;
+}
+
+/**
+ * The resolved call to action the renderer draws: one headline, one link and
+ * (when generation succeeded) one QR code. Resolved on the server so the
+ * composition never has to know which store a device belongs to.
+ */
+export interface CallToAction {
+  headline: string;
+  /** Displayed verbatim, so it is normalised before it gets here. */
+  url: string;
+  hint: string;
+  /** PNG data URI, or null when the code could not be generated. */
+  qrCode: string | null;
+}
+
 // ====== VIDEO GENERATION ======
 
 export type AspectRatio = "9:16" | "16:9" | "1:1";
@@ -213,6 +241,8 @@ export interface GenerationRequest {
   style: VideoStyle;
   device: DeviceType;
   productAnalysis: ProductAnalysis;
+  /** Links the ad closes on. Absent on jobs queued before this existed. */
+  metadata?: ProductMetadata;
 }
 
 export type JobStatus =
@@ -303,4 +333,6 @@ export type VideoCompositionProps = {
   palette: ColorPalette;
   assets: AssetRef[];
   productName: string;
+  /** null when we have no link worth showing - the outro then just fades. */
+  cta: CallToAction | null;
 };

@@ -18,6 +18,8 @@ export default function StudioPage() {
   const jobId = useProjectStore((state) => state.jobId);
   const setStyle = useProjectStore((state) => state.setStyle);
   const setDevice = useProjectStore((state) => state.setDevice);
+  const metadata = useProjectStore((state) => state.metadata);
+  const setMetadata = useProjectStore((state) => state.setMetadata);
 
   const {
     phase,
@@ -152,9 +154,12 @@ export default function StudioPage() {
           assets={assets}
           style={style}
           device={device}
+          metadata={metadata}
+          productName={analysis?.name ?? ""}
           busy={false}
           onStyle={setStyle}
           onDevice={setDevice}
+          onMetadata={setMetadata}
           onBack={studio.backToConcepts}
           onGenerate={() => void studio.startRender()}
         />

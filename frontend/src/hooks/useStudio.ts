@@ -7,6 +7,7 @@ import type {
   AssetRef,
   DeviceType,
   ProductAnalysis,
+  ProductMetadata,
   Storyboard,
   VideoStyle,
 } from "@/types";
@@ -101,6 +102,7 @@ export function useStudio() {
           style: overrides?.style ?? state.style,
           device: overrides?.device ?? state.device,
           analysis: productAnalysis,
+          metadata: cleanMetadata(state.metadata),
         });
         state.setJobId(response.jobId);
         setEstimate(response.estimatedTime);
@@ -217,6 +219,14 @@ export function useStudio() {
       }
       state.setStoryboardId(first.id);
 
+      // The link the ad closes on defaults to the page we just captured. The
+      // options panel can change it; it should never start empty. Read the
+      // live store rather than the snapshot taken before `reset()`.
+      const current = store.getState();
+      if (!current.metadata.productUrl && fresh.sourceUrl) {
+        current.setMetadata({ productUrl: fresh.sourceUrl });
+      }
+
       // 4. Hand over: which of the three, and how it should look.
       setPhase("choosing");
     },
@@ -302,6 +312,17 @@ export function useStudio() {
     startOver,
     changeAndRerender,
   };
+}
+
+/**
+ * Drops blank fields so the API sees "not given" rather than an empty string,
+ * and trims the rest - a trailing space is enough to make a URL unparseable.
+ */
+function cleanMetadata(metadata: ProductMetadata): ProductMetadata {
+  const entries = Object.entries(metadata)
+    .map(([key, value]) => [key, (value ?? "").trim()] as const)
+    .filter(([, value]) => value !== "");
+  return Object.fromEntries(entries) as ProductMetadata;
 }
 
 function styleForTone(tone: ProductAnalysis["tone"]): VideoStyle {
