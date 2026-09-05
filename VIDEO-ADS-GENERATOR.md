@@ -47,7 +47,7 @@ endpoint tells you which mode you are in:
 
 ```bash
 curl localhost:3001/health
-# {"status":"ok","queue":"memory","claude":"missing-key","nativeAspects":true}
+# {"status":"ok","queue":"memory","claude":"missing-key","nativeAspects":false}
 ```
 
 ### What it needs
@@ -84,8 +84,9 @@ afterwards, as a change you can make to a video you can already watch:
 | Device    | iPhone 15 Pro — 9:16 is the format most people want, and a phone fills that frame | in the options panel |
 
 `useStudio` owns the whole run as one phase machine (`capturing` →
-`analysing` → `writing` → `rendering` → `done`). There is no wizard, no
-routing between steps and no page that exists only to be read.
+`analysing` → `writing` → `choosing` → `customizing` → `rendering` →
+`done`). Four visible stages, still one page and one URL — no routing
+between steps and no page that exists only to be read.
 
 ## The flow
 
@@ -131,10 +132,27 @@ generator prompt. Three compositions are registered (`VideoAd-9x16`,
 `VideoAd-16x9`, `VideoAd-1x1`) sharing the same responsive component:
 portrait puts the copy under the device, landscape puts it in a left column.
 
-`RENDER_NATIVE_ASPECTS=true` (the default) renders all three natively — best
-quality, roughly 3× the wall clock. Set it to `false` to render 9:16 once and
-reframe the other two with ffmpeg (scaled to fit over a blurred, darkened copy
-of itself; cropping would cut the device frame in half).
+### Memory
+
+Rendering is what gets a small container OOM-killed, and every lever is an
+environment variable. The defaults are sized for a ~1 GB instance:
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `RENDER_CONCURRENCY` | `1` | Frames in parallel. Each is a Chrome tab holding a full frame buffer, so this multiplies peak memory directly — the largest single lever. |
+| `VIDEO_SHORT_EDGE` | `720` | Compositions are authored at 1080 and scaled to this. 720 is 44% of the pixels. |
+| `RENDER_NATIVE_ASPECTS` | `false` | `true` renders all three aspects natively (three Chrome sessions, ~3× the wall clock). `false` renders 9:16 once and reframes the other two with ffmpeg — scaled to fit over a blurred, darkened copy of itself, because cropping would cut the device frame in half. |
+| `VIDEO_CRF` | `28` | x264 quality. Higher is smaller and cheaper to encode. |
+| `X264_PRESET` | `veryfast` | Faster presets use less memory for motion search. |
+
+Concurrency 1 at 720p is roughly a fifth of the peak frame-buffer memory of
+concurrency 2 at 1080p. On a bigger container, `RENDER_CONCURRENCY=2`,
+`VIDEO_SHORT_EDGE=1080`, `VIDEO_CRF=20` and `RENDER_NATIVE_ASPECTS=true`
+restore full quality.
+
+There is no audio track. Remotion attaches a silent AAC stream by default —
+it was running at 317 kb/s, close to half the file — so `muted: true` drops
+it. Turn that off in `remotion.service.ts` if voice-over is ever added.
 
 ```bash
 cd backend && npm run remotion:studio   # scrub the compositions by hand

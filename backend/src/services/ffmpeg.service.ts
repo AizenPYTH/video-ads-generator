@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import ffmpegStatic from "ffmpeg-static";
+import { env } from "../utils/env";
 import { logger } from "../utils/logger";
 
 /**
@@ -101,9 +102,9 @@ export async function reframe(
     "-c:v",
     "libx264",
     "-preset",
-    "medium",
+    env.x264Preset,
     "-crf",
-    "20",
+    String(env.videoCrf),
     "-pix_fmt",
     "yuv420p",
     "-movflags",

@@ -30,9 +30,30 @@ export const env = {
   redisUrl: process.env.REDIS_URL ?? "",
   supabaseUrl: process.env.SUPABASE_URL ?? "",
   supabaseKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
-  /** Render every aspect ratio natively instead of cropping one master. */
-  renderNativeAspects: (process.env.RENDER_NATIVE_ASPECTS ?? "true") !== "false",
-  renderConcurrency: num(process.env.RENDER_CONCURRENCY, 2),
+  /**
+   * Render every aspect ratio natively instead of reframing one master.
+   * Off by default: three native renders means three headless Chrome
+   * sessions, and on a small container that is what gets the process
+   * OOM-killed. Turn it on when you have the memory to spare.
+   */
+  renderNativeAspects: (process.env.RENDER_NATIVE_ASPECTS ?? "false") === "true",
+  /**
+   * Frames rendered in parallel. Each one is a Chrome tab holding a full
+   * frame buffer, so this multiplies peak memory directly. 1 is the safe
+   * default; raise it only on a container with room.
+   */
+  renderConcurrency: num(process.env.RENDER_CONCURRENCY, 1),
+  /**
+   * Short edge of the output, in pixels. The compositions are authored at
+   * 1080 and scaled to this at render time. 720 is 44% of the pixels of
+   * 1080 and the difference is hard to see on a phone; set 1080 for full
+   * resolution if the container can take it.
+   */
+  videoShortEdge: num(process.env.VIDEO_SHORT_EDGE, 720),
+  /** x264 quality. Higher is smaller and cheaper to encode. */
+  videoCrf: num(process.env.VIDEO_CRF, 28),
+  /** x264 speed preset. Faster presets use less memory for motion search. */
+  x264Preset: process.env.X264_PRESET ?? "veryfast",
   /** Full Chromium used by Playwright for scraping. */
   browserExecutable: process.env.BROWSER_EXECUTABLE ?? "",
   /**

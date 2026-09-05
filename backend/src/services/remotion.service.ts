@@ -120,6 +120,20 @@ export interface RenderOptions {
   signal?: AbortSignal;
 }
 
+/** h264 needs even dimensions; round rather than truncate so 1:1 stays square. */
+const even = (value: number): number => Math.round(value / 2) * 2;
+
+/**
+ * The compositions are authored at a 1080 short edge. Rendering at 720
+ * costs 44% of the pixels per frame, which is the single largest lever on
+ * peak memory after concurrency.
+ */
+function scaled(width: number, height: number): { width: number; height: number } {
+  const factor = env.videoShortEdge / 1080;
+  if (factor >= 1) return { width, height };
+  return { width: even(width * factor), height: even(height * factor) };
+}
+
 async function renderOne(
   serveUrl: string,
   ratio: AspectRatio,
@@ -134,16 +148,24 @@ async function renderOne(
     ...browserOptions(),
   });
 
+  const size = scaled(composition.width, composition.height);
+
   await renderMedia({
-    composition,
+    composition: { ...composition, ...size },
     serveUrl,
     codec: "h264",
     outputLocation,
     inputProps,
     imageFormat: "jpeg",
-    jpegQuality: 92,
-    crf: 20,
-    x264Preset: "medium",
+    jpegQuality: 80,
+    // Remotion attaches a silent AAC track by default - 317 kb/s of nothing,
+    // which was close to half the file. These compositions have no audio at
+    // all, so drop the track rather than pay to encode silence. Flip this if
+    // voice-over is ever added.
+    muted: true,
+    crf: env.videoCrf,
+    x264Preset: env.x264Preset as "veryfast",
+    // Each unit of concurrency is another Chrome tab holding a frame buffer.
     concurrency: env.renderConcurrency,
     chromiumOptions: { gl: "swangle" },
     ...browserOptions(),
@@ -195,7 +217,10 @@ export async function renderVideo(options: RenderOptions): Promise<{
     const master = path.join(dir, files[primary] as string);
     for (const ratio of ASPECT_RATIOS) {
       if (ratio === primary) continue;
-      const size = ASPECT_DIMENSIONS[ratio];
+      // Scaled like the master: reframing to the full 1080 table would
+      // upscale a 720p source, costing bytes and quality for nothing.
+      const full = ASPECT_DIMENSIONS[ratio];
+      const size = scaled(full.width, full.height);
       const filename = `${jobId}-${ratio.replace(":", "x")}.mp4`;
       onProgress(0.9, `Exporting ${ratio}`);
       await ffmpeg.reframe(
