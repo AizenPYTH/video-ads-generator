@@ -75,3 +75,9 @@ Thumbs.db
 
 .vercel
 .env*
+
+# `.env*` above also swallowed these, so the setup step in the README
+# ("cp backend/.env.example backend/.env") pointed at a file nobody had.
+!.env.example
+!backend/.env.example
+!frontend/.env.example
