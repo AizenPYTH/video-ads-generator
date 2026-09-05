@@ -123,7 +123,7 @@ export const FileDropzone: React.FC<{
         onClick={() => onSubmit(previews.map((preview) => preview.file))}
       >
         {loading ? <Spinner /> : <Sparkles />}
-        {loading ? "Uploading…" : `Analyse ${previews.length || ""} screenshot${previews.length === 1 ? "" : "s"}`}
+        {loading ? "Uploading…" : "Create my video"}
       </Button>
     </div>
   );

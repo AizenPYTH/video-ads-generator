@@ -10,7 +10,7 @@ app in this repo:
 | Path        | What it is                                                        |
 | ----------- | ----------------------------------------------------------------- |
 | `backend/`  | Express + TypeScript API, Playwright capture, Claude, Remotion, ffmpeg |
-| `frontend/` | React 19 + Vite + Tailwind 4 + Zustand SPA                         |
+| `frontend/` | React 19 + Vite + Tailwind 4 + Zustand — one screen, one input     |
 
 Neither is compiled by the root `tsconfig.json`, linted by the root ESLint
 config, or picked up by the root Vitest config.
@@ -47,6 +47,30 @@ curl localhost:3001/health
 ```
 
 ---
+
+## The interface
+
+One screen, one field, one button. Paste a link, get a video.
+
+```
+Paste your link ─► Opening your site
+                   Looking at what it does
+                   Writing the ad
+                   Filming it            ─► video + three downloads
+```
+
+Everything the pipeline needs is decided for you and only surfaced
+afterwards, as a change you can make to a video you can already watch:
+
+| Decision  | Default                                          | Change it            |
+| --------- | ------------------------------------------------ | -------------------- |
+| Angle     | The first of the three concepts Claude wrote     | in the options panel |
+| Look      | Derived from the product's own tone (`ProductAnalysis.tone`) | in the options panel |
+| Device    | iPhone 15 Pro — 9:16 is the format most people want, and a phone fills that frame | in the options panel |
+
+`useStudio` owns the whole run as one phase machine (`capturing` →
+`analysing` → `writing` → `rendering` → `done`). There is no wizard, no
+routing between steps and no page that exists only to be read.
 
 ## The flow
 

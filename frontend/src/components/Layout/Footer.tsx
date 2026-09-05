@@ -1,8 +1,7 @@
 export const Footer: React.FC = () => (
-  <footer className="border-t border-white/6 py-8">
-    <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-5 text-xs text-mist-400 sm:flex-row">
-      <p>Reel — product analysis and storyboards by Claude, video by Remotion.</p>
-      <p>Renders locally. Nothing is published without you.</p>
-    </div>
+  <footer className="py-10">
+    <p className="mx-auto max-w-2xl px-5 text-center text-xs text-mist-400/70">
+      Renders on your own backend. Nothing is published without you.
+    </p>
   </footer>
 );

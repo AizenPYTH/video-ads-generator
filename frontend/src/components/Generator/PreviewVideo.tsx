@@ -44,7 +44,7 @@ export const PreviewVideo: React.FC<{
       <div
         role="tablist"
         aria-label="Video formats"
-        className="inline-flex rounded-xl border border-white/8 bg-white/3 p-1"
+        className="mx-auto flex w-fit rounded-xl border border-white/8 bg-white/3 p-1"
       >
         {TABS.map((tab) => (
           <button
