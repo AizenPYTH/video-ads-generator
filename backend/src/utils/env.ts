@@ -1,6 +1,7 @@
 import path from "node:path";
 import dotenv from "dotenv";
 import { PROJECT_ROOT } from "./paths";
+import { findHeadlessShell } from "./browsers";
 
 dotenv.config({ path: path.join(PROJECT_ROOT, ".env") });
 
@@ -37,9 +38,12 @@ export const env = {
   /**
    * Remotion launches with old-style `--headless`, which modern full Chrome
    * builds no longer accept, so it needs a chrome-headless-shell binary -
-   * a different executable from the scraper's.
+   * a different executable from the scraper's. Falls back to the shell that
+   * ships alongside Playwright's Chromium, so a container usually needs no
+   * configuration at all.
    */
-  remotionBrowserExecutable: process.env.REMOTION_BROWSER_EXECUTABLE ?? "",
+  remotionBrowserExecutable:
+    process.env.REMOTION_BROWSER_EXECUTABLE || findHeadlessShell(),
   scrapeTimeoutMs: num(process.env.SCRAPE_TIMEOUT_MS, 45_000),
   jobTtlMs: num(process.env.JOB_TTL_MS, 6 * 60 * 60 * 1000),
 } as const;

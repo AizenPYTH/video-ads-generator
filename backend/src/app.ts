@@ -5,6 +5,7 @@ import pinoHttp from "pino-http";
 import apiRoutes from "./routes";
 import { assetHandler } from "./routes/video";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
+import { isOriginAllowed } from "./middleware/cors";
 import { logger } from "./utils/logger";
 import { env } from "./utils/env";
 import { hasAnthropicKey } from "./utils/env";
@@ -24,7 +25,11 @@ export function createApp(): Express {
   );
   app.use(
     cors({
-      origin: env.frontendUrl === "*" ? true : env.frontendUrl.split(","),
+      origin: (origin, callback) => {
+        const allowed = isOriginAllowed(env.frontendUrl, origin);
+        if (!allowed) logger.warn({ origin }, "blocked by CORS - add it to FRONTEND_URL");
+        callback(null, allowed);
+      },
       credentials: true,
     }),
   );

@@ -172,34 +172,67 @@ than a placeholder. `backend/supabase/001_video_jobs.sql` creates the table.
 
 ## Deploying
 
-- **Frontend → Vercel.** Root directory `frontend`, build `npm run build`,
-  output `dist`. Set `VITE_API_URL` to the backend origin.
-- **Backend → Railway or Render.** It needs a filesystem for `storage/`, a
-  Chromium, and ffmpeg (bundled via `ffmpeg-static`). Set `PUBLIC_BASE_URL` to
-  the backend's own public origin — headless Chrome loads capture assets
-  through it during rendering, so `localhost` will silently produce blank
-  screens in the video. Set `FRONTEND_URL` for CORS (comma-separated for
-  several origins).
-- Renders and captures are pruned after `JOB_TTL_MS` (6h default).
+**The frontend goes on Vercel. The backend cannot.** That is not a
+configuration problem to solve — the backend launches Chromium, renders
+video for two to five minutes per job and writes files to disk. Vercel
+functions cap at 60s (Hobby) / 300s (Pro) and have a read-only filesystem
+apart from a non-persistent `/tmp`. Job state would also land on a
+different instance from the one the status endpoint polls.
 
----
+So: **frontend on Vercel, backend on anything that runs a container.**
 
-## Deliberate deviations from the brief
+### Frontend → Vercel
 
-Three, all load-bearing:
+New Project → import this repo → set **Root Directory** to `frontend`.
+`frontend/vercel.json` supplies the rest (Vite preset, `dist`, SPA
+rewrite). Then one environment variable:
 
-1. **No runtime React code generation.** The brief included a prompt that asks
-   Claude to emit a Remotion component per render. Its own implementation plan
-   asks for a generic component taking storyboard JSON — that is what is built.
-   Generating and executing model-written React on every render is
-   non-deterministic and is arbitrary code execution on the server; the generic
-   composition renders the same storyboard the same way every time.
-2. **Native `<video>` instead of video.js / Plyr.** The preview plays our own
-   MP4 from our own origin. A player library would add ~100 KB for controls the
-   browser already has.
-3. **`claude-opus-5` / `claude-sonnet-5`**, not `claude-opus-4-1`. Requests use
-   structured outputs (`output_config.format`) with a JSON Schema, and fall
-   back to parsing a free-form JSON body if the schema is rejected.
+```
+VITE_API_URL = https://your-backend-host
+```
+
+It is read at **build time**, so changing it needs a redeploy.
+
+> Import as a **separate Vercel project** from the Next.js `smart-seller`
+> app at the repo root. The root `vercel.json` belongs to that app and is
+> untouched.
+
+### Backend → Railway, Render, Fly, Cloud Run
+
+`backend/Dockerfile` builds it. Point the platform at the `backend`
+directory and let it build the Dockerfile — no start command needed.
+
+Required environment:
+
+```
+ANTHROPIC_API_KEY=sk-ant-...
+PUBLIC_BASE_URL=https://your-backend-host      # see below
+FRONTEND_URL=https://your-app.vercel.app,*.vercel.app
+```
+
+`PUBLIC_BASE_URL` is the one that bites. Headless Chrome loads the capture
+assets through it while rendering, so if it still says `localhost` the
+video renders with blank screens — no error, just empty device frames. Set
+it to the backend's own public origin.
+
+`FRONTEND_URL` is a comma-separated allowlist and accepts `*.` wildcards.
+Include `*.vercel.app` or every preview deploy fails CORS.
+
+Attach a volume at `/app/storage` if you want renders to survive a restart.
+Without one they are regenerated on demand, which is fine.
+
+### What I verified, and what I did not
+
+Verified here: the frontend built with `VITE_API_URL` set, served
+statically with **no proxy**, calls `https://<that host>/api/upload`, and a
+deep link still boots the SPA. The CORS allowlist has unit tests covering
+exact hosts, wildcards, lookalike domains and malformed origins.
+
+**Not verified: the Dockerfile has never been built.** There is no Docker
+daemon in the environment it was written in. Every `COPY` path was checked
+to exist and the entrypoint (`dist/src/server.js`) is the real build
+output, but the image itself is unbuilt. Expect to iterate on the first
+`docker build`.
 
 ## Not built
 
