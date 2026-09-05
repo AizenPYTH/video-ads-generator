@@ -1,0 +1,53 @@
+{
+  "name": "video-ads-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/src/server.js",
+    "worker": "tsx src/jobs/worker.ts",
+    "worker:start": "node dist/src/jobs/worker.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "remotion:studio": "remotion studio remotion/src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src remotion tests"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.0",
+    "@remotion/bundler": "4.0.409",
+    "@remotion/cli": "4.0.409",
+    "@remotion/renderer": "4.0.409",
+    "@supabase/supabase-js": "^2.110.7",
+    "bull": "^4.16.5",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.4",
+    "express": "^4.21.2",
+    "ffmpeg-static": "^5.2.0",
+    "helmet": "^8.1.0",
+    "pino": "^9.6.0",
+    "pino-http": "^10.4.0",
+    "playwright": "^1.61.1",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "remotion": "4.0.409",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "eslint": "^9.39.5",
+    "globals": "^17.12.0",
+    "pino-pretty": "^13.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.69.0",
+    "vitest": "^4.1.10"
+  }
+}

@@ -2,6 +2,14 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 **Smart Seller** — outil de création et publication d’annonces eBay (photos, import fichier, URL).
 
+## Video Ads Generator
+
+This repository also contains a standalone AI video-ad generator in `backend/`
+and `frontend/` — a product URL in, a finished MP4 in three aspect ratios out.
+It deploys separately from the Next.js app above.
+
+See [VIDEO-ADS-GENERATOR.md](./VIDEO-ADS-GENERATOR.md).
+
 ## Getting Started
 
 First, run the development server:

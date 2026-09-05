@@ -8,6 +8,7 @@ export default defineConfig({
     environment: "node",
     globals: true,
     include: ["tests/**/*.test.{ts,tsx}"],
+    exclude: ["backend/**", "frontend/**", "node_modules/**"],
   },
   resolve: {
     alias: {
