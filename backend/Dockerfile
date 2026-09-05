@@ -39,10 +39,9 @@ COPY tsconfig.json ./
 COPY src ./src
 COPY remotion ./remotion
 
-# Renders and captures live here. Mount a volume to keep them across
-# restarts; without one they are simply regenerated on demand.
+# Renders and captures live here. Not a declared VOLUME - the platforms
+# this targets mount their own at this path, and Cloud Run ignores it.
 RUN mkdir -p /app/storage
-VOLUME ["/app/storage"]
 
 EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \

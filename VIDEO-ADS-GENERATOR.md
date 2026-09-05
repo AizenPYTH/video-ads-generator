@@ -219,7 +219,9 @@ it to the backend's own public origin.
 Include `*.vercel.app` or every preview deploy fails CORS.
 
 Attach a volume at `/app/storage` if you want renders to survive a restart.
-Without one they are regenerated on demand, which is fine.
+Without one they are regenerated on demand, which is fine. The Dockerfile
+deliberately does not declare a `VOLUME` there — the platform mounts its
+own at that path, and a declared one gets in the way (Cloud Run ignores it).
 
 ### What I verified, and what I did not
 
