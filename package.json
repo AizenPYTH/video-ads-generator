@@ -11,7 +11,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "generate-templates": "npx tsx scripts/generate-templates.ts",
-    "ebay:deletion-challenge": "npx tsx scripts/ebay-deletion-challenge.ts"
+    "ebay:deletion-challenge": "npx tsx scripts/ebay-deletion-challenge.ts",
+    "video:setup": "npm --prefix backend install && npm --prefix backend exec -- playwright install chromium && npm --prefix frontend install",
+    "video:backend": "npm --prefix backend run dev",
+    "video:frontend": "npm --prefix frontend run dev"
   },
   "dependencies": {
     "@google-cloud/vision": "^5.3.7",

@@ -17,34 +17,49 @@ config, or picked up by the root Vitest config.
 
 ---
 
-## Quick start
+## Run it on your machine
+
+From the repo root, once:
 
 ```bash
-# terminal 1
-cd backend
-cp .env.example .env          # add ANTHROPIC_API_KEY
-npm install
-npm run dev                   # http://localhost:3001
-
-# terminal 2
-cd frontend
-npm install
-npm run dev                   # http://localhost:5173
+npm run video:setup          # installs both apps + the Chromium Playwright needs
+cp backend/.env.example backend/.env
 ```
+
+Then two terminals:
+
+```bash
+npm run video:backend        # http://localhost:3001
+npm run video:frontend       # http://localhost:5173  <- open this one
+```
+
+Open **http://localhost:5173**. Paste a link, press the button.
 
 Vite proxies `/api` and `/media` to the backend, so dev is same-origin and
 behaves like production. (`/media`, not `/assets` — Vite emits the frontend
 bundle under `/assets`.)
 
-**Without an `ANTHROPIC_API_KEY` the app still runs end to end.** Analysis
-falls back to a DOM heuristic and storyboards to three built-in narrative
-templates, so you can exercise capture, rendering and download offline. The
-health endpoint reports which mode you are in:
+**It runs without an `ANTHROPIC_API_KEY`.** Analysis falls back to a DOM
+heuristic and the storyboards to three built-in narrative templates, so the
+capture, render and download path all work offline — the copy is just
+generic. Add the key to `backend/.env` for the real thing. The health
+endpoint tells you which mode you are in:
 
 ```bash
 curl localhost:3001/health
 # {"status":"ok","queue":"memory","claude":"missing-key","nativeAspects":true}
 ```
+
+### What it needs
+
+- **Node 20+.**
+- **Chromium for Playwright** — `npm run video:setup` installs it.
+- **A headless-shell Chromium for Remotion** — downloaded automatically on
+  the first render. These are two different binaries; see *Browsers* below.
+- **ffmpeg** — bundled via `ffmpeg-static`, nothing to install.
+
+The first render takes an extra ~20s while Remotion bundles and fetches its
+browser. After that, budget ~2 minutes per video.
 
 ---
 
