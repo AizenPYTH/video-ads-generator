@@ -219,9 +219,24 @@ it to the backend's own public origin.
 Include `*.vercel.app` or every preview deploy fails CORS.
 
 Attach a volume at `/app/storage` if you want renders to survive a restart.
-Without one they are regenerated on demand, which is fine. The Dockerfile
-deliberately does not declare a `VOLUME` there — the platform mounts its
-own at that path, and a declared one gets in the way (Cloud Run ignores it).
+Without one they are regenerated on demand, which is fine.
+
+The Dockerfile deliberately does not declare that path as a mount point.
+Railway **rejects the build outright** if it finds such a declaration —
+
+```
+dockerfile invalid: docker VOLUME at Line 45 is not supported,
+use Railway Volumes
+```
+
+— so you attach storage in Railway's own UI (Service → Variables → Volumes,
+mount path `/app/storage`) rather than in the image. Fly attaches its own
+at that path and Cloud Run ignores the declaration, so leaving it out is
+right everywhere, not just on Railway.
+
+> If Railway still reports that error, it is building an older commit.
+> Check which SHA the failed deploy used — the message names the exact line
+> number, which is a fast way to tell.
 
 ### What I verified, and what I did not
 

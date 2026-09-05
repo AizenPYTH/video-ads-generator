@@ -39,8 +39,10 @@ COPY tsconfig.json ./
 COPY src ./src
 COPY remotion ./remotion
 
-# Renders and captures live here. Not a declared VOLUME - the platforms
-# this targets mount their own at this path, and Cloud Run ignores it.
+# Renders and captures live here. Deliberately not declared as a mount
+# point: Railway rejects that outright, Fly attaches its own storage at
+# this path, and Cloud Run ignores the declaration. Create the directory
+# and let the platform decide what is behind it.
 RUN mkdir -p /app/storage
 
 EXPOSE 3001
