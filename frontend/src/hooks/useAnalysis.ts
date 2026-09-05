@@ -68,7 +68,13 @@ export function useAnalysis(uploadId: string | null) {
 
     const controller = new AbortController();
     void run(controller.signal);
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      // StrictMode double-invokes effects in development. Without clearing
+      // the marker the second pass would skip the request the first pass
+      // just aborted, and the page would sit on the loader forever.
+      if (startedFor.current === uploadId) startedFor.current = null;
+    };
     // `run` intentionally excluded: it changes with style/device, which must
     // not re-trigger a full re-analysis while the user is picking a concept.
     // eslint-disable-next-line react-hooks/exhaustive-deps

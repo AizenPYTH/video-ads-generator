@@ -44,8 +44,12 @@ export async function writeFile(
   return target;
 }
 
+/**
+ * `/media`, not `/assets`: Vite emits the frontend bundle under `/assets`, and
+ * a shared prefix would send the app's own JS and CSS to this API.
+ */
 export function publicUrl(bucket: StorageBucket, filename: string): string {
-  return `${env.publicBaseUrl}/assets/${bucket}/${encodeURIComponent(filename)}`;
+  return `${env.publicBaseUrl}/media/${bucket}/${encodeURIComponent(filename)}`;
 }
 
 export function exists(filePath: string): boolean {

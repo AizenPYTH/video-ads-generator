@@ -44,7 +44,7 @@ export function createApp(): Express {
     });
   });
 
-  app.use("/assets", assetHandler());
+  app.use("/media", assetHandler());
   app.use("/api", apiRoutes);
 
   app.use(notFoundHandler);

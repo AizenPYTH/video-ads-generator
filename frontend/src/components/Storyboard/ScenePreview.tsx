@@ -33,7 +33,7 @@ export const ScenePreview: React.FC<{
     POSITION_CLASSES[overlay?.position ?? "bottom"] ?? POSITION_CLASSES.bottom;
 
   return (
-    <div className="grid gap-5 sm:grid-cols-[minmax(0,180px)_1fr]">
+    <div className="grid items-start gap-5 sm:grid-cols-[minmax(0,180px)_1fr]">
       <div className="relative aspect-9/16 overflow-hidden rounded-xl border border-white/10 bg-ink-900">
         {asset ? (
           <img

@@ -176,6 +176,16 @@ export async function renderVideo(options: RenderOptions): Promise<{
       onProgress((index + fraction) / totalSteps, `Rendering ${ratio}`);
     });
 
+    // Move the moov atom to the front so the browser can start playing before
+    // the whole file arrives. Stream copy, so it costs about a second.
+    try {
+      const faststart = path.join(dir, `${jobId}-${ratio.replace(":", "x")}.web.mp4`);
+      await ffmpeg.optimizeForWeb(outputLocation, faststart);
+      await fs.rename(faststart, outputLocation);
+    } catch (error) {
+      logger.warn({ error, jobId, ratio }, "faststart remux skipped");
+    }
+
     files[ratio] = filename;
     logger.info({ jobId, ratio, filename }, "aspect rendered");
   }

@@ -16,7 +16,7 @@ export default defineConfig({
         target: process.env.VITE_PROXY_TARGET ?? "http://localhost:3001",
         changeOrigin: true,
       },
-      "/assets": {
+      "/media": {
         target: process.env.VITE_PROXY_TARGET ?? "http://localhost:3001",
         changeOrigin: true,
       },

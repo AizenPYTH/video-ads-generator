@@ -14,7 +14,7 @@ const SWATCHES = [
 export const ProductInfo: React.FC<{ analysis: ProductAnalysis }> = ({
   analysis,
 }) => (
-  <div className="grid gap-5 lg:grid-cols-3">
+  <div className="grid items-start gap-5 lg:grid-cols-3">
     <Card className="lg:col-span-2">
       <CardHeader>
         <div className="flex flex-wrap items-center gap-2">

@@ -32,8 +32,9 @@ npm install
 npm run dev                   # http://localhost:5173
 ```
 
-Vite proxies `/api` and `/assets` to the backend, so dev is same-origin and
-behaves like production.
+Vite proxies `/api` and `/media` to the backend, so dev is same-origin and
+behaves like production. (`/media`, not `/assets` — Vite emits the frontend
+bundle under `/assets`.)
 
 **Without an `ANTHROPIC_API_KEY` the app still runs end to end.** Analysis
 falls back to a DOM heuristic and storyboards to three built-in narrative
@@ -75,7 +76,7 @@ URL ──► Playwright ──► 7 captures ──► Claude vision ──► 
 | `POST` | `/api/generate`                       | `{storyboard, style, device, analysis}` → `jobId`  |
 | `GET`  | `/api/video/:jobId/status`            | progress, message, outputs, poster                 |
 | `GET`  | `/api/video/:jobId/download/:format`  | `9x16` \| `16x9` \| `1x1` → MP4 attachment         |
-| `GET`  | `/assets/:bucket/:file`               | captures, renders, posters                         |
+| `GET`  | `/media/:bucket/:file`                | captures, renders, posters                         |
 | `GET`  | `/health`                             | queue kind, Claude mode, render mode               |
 
 Captured bytes stay on the server. The client only ever holds ids and URLs, so

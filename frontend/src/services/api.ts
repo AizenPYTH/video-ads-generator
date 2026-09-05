@@ -11,7 +11,7 @@ import type {
   DeviceType,
 } from "@/types";
 
-/** Empty in dev: Vite proxies /api and /assets to the backend. */
+/** Empty in dev: Vite proxies /api and /media to the backend. */
 const BASE_URL = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
 export class ApiError extends Error {

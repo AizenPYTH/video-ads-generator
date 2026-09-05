@@ -48,9 +48,13 @@ export const ProgressBar: React.FC<{
       </div>
 
       <ul className="space-y-2">
-        {PHASES.map((phase) => {
+        {PHASES.map((phase, index) => {
           const done = progress >= phase.upTo;
-          const active = !done && progress > 0;
+          // Only the first unfinished phase is in flight; the rest are queued.
+          const active =
+            !done &&
+            progress > 0 &&
+            PHASES.slice(0, index).every((earlier) => progress >= earlier.upTo);
           return (
             <li
               key={phase.key}
