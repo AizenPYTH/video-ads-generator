@@ -1,7 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { env, hasAnthropicKey } from "../utils/env";
 import { logger } from "../utils/logger";
-import { extractJson, generateId, nowIso } from "../utils/helpers";
+import { generateId, nowIso } from "../utils/helpers";
+import { parseModelJson } from "../utils/json";
 import {
   analysisJsonSchema,
   analysisResultSchema,
@@ -35,10 +36,29 @@ function textOf(message: Anthropic.Message): string {
     .trim();
 }
 
+class TruncatedResponseError extends Error {
+  constructor(readonly label: string) {
+    super(
+      `Claude hit the output limit while writing the ${label}. The response was cut off mid-JSON.`,
+    );
+    this.name = "TruncatedResponseError";
+  }
+}
+
+async function send(
+  params: Anthropic.MessageCreateParamsNonStreaming,
+  stream: boolean,
+): Promise<Anthropic.Message> {
+  if (!stream) return client().messages.create(params);
+  // Long JSON bodies are streamed: a large `max_tokens` on a non-streaming
+  // request runs into the SDK's HTTP timeout.
+  return client().messages.stream(params).finalMessage();
+}
+
 /**
  * Structured outputs give us schema-valid JSON directly, but a refusal or an
- * unsupported-format error should not sink the request - fall back to parsing
- * the text body before giving up.
+ * unsupported-format error should not sink the request - fall back to
+ * parsing (and repairing) the text body before giving up.
  */
 async function requestJson<T>(params: {
   model: string;
@@ -47,45 +67,64 @@ async function requestJson<T>(params: {
   content: Anthropic.ContentBlockParam[];
   schema: unknown;
   label: string;
+  stream?: boolean;
 }): Promise<unknown> {
-  const base = {
+  const base: Anthropic.MessageCreateParamsNonStreaming = {
     model: params.model,
     max_tokens: params.maxTokens,
     system: params.system,
     messages: [{ role: "user" as const, content: params.content }],
   };
 
-  try {
-    const response = await client().messages.create({
-      ...base,
-      output_config: {
-        format: { type: "json_schema", schema: params.schema },
-      },
-    } as Anthropic.MessageCreateParamsNonStreaming);
-
+  const read = (response: Anthropic.Message): unknown => {
     if (response.stop_reason === "refusal") {
-      // `stop_details` is only populated on refusals and is not in every SDK
-      // release's `Message` type yet.
       const details = (response as { stop_details?: { category?: string } })
         .stop_details;
       throw new Error(
         `Claude declined the ${params.label} request (${details?.category ?? "unspecified"})`,
       );
     }
-    return JSON.parse(extractJson(textOf(response))) as T;
+    // The failure behind "malformed JSON at position N": the body was cut
+    // off at the token ceiling. Repairing that silently would drop scenes,
+    // so it is raised and retried with a bigger budget instead.
+    if (response.stop_reason === "max_tokens") {
+      logger.warn(
+        { label: params.label, usage: response.usage },
+        "response hit max_tokens - output was truncated",
+      );
+      throw new TruncatedResponseError(params.label);
+    }
+
+    const outcome = parseModelJson(textOf(response));
+    if (outcome.repair !== "none") {
+      logger.warn(
+        { label: params.label, repair: outcome.repair, truncated: outcome.truncated },
+        "repaired malformed JSON from Claude",
+      );
+    }
+    if (outcome.truncated) throw new TruncatedResponseError(params.label);
+    return outcome.value as T;
+  };
+
+  try {
+    const response = await send(
+      {
+        ...base,
+        output_config: {
+          format: { type: "json_schema", schema: params.schema },
+        },
+      } as Anthropic.MessageCreateParamsNonStreaming,
+      params.stream ?? false,
+    );
+    return read(response);
   } catch (error) {
+    if (error instanceof TruncatedResponseError) throw error;
     if (error instanceof Anthropic.BadRequestError) {
       logger.warn(
         { error: error.message, label: params.label },
         "structured output rejected, retrying as free-form JSON",
       );
-      const response = await client().messages.create(base);
-      if (response.stop_reason === "refusal") {
-        throw new Error(`Claude declined the ${params.label} request`, {
-          cause: error,
-        });
-      }
-      return JSON.parse(extractJson(textOf(response))) as T;
+      return read(await send(base, params.stream ?? false));
     }
     throw error;
   }
@@ -223,6 +262,19 @@ CONTROLLED VOCABULARY - use these exact strings, nothing else
 Any other value for these fields is invalid. Do not invent synonyms, do not
 use CamelCase variants, do not leave "concept" out.
 
+OUTPUT FORMAT - one JSON object, nothing else. No prose, no markdown fence.
+This is the exact shape, abridged to two scenes:
+
+{"storyboards":[{"title":"The Problem, Solved","concept":"Problem to Solution","description":"Opens on the friction, then the fix.","totalDuration":12,"scenes":[{"id":1,"name":"The Friction","duration":3,"description":"Cluttered before-state.","actions":[{"type":"display","target":"screenshot_main","content":null,"position":null,"animation":"fadeIn","effect":null,"easing":"easeOut","duration":3,"delay":null}],"textOverlay":{"content":"Still doing it manually?","position":"bottom","fontSize":60,"color":"#FFFFFF","animation":"slideInBottom"}},{"id":2,"name":"Call To Action","duration":2,"description":"Logo and CTA.","actions":[{"type":"display","target":"screenshot_main","content":null,"position":null,"animation":"scaleUp","effect":null,"easing":"easeOut","duration":2,"delay":null}],"textOverlay":{"content":"Try it free","position":"bottom","fontSize":64,"color":"#FFFFFF","animation":"fadeIn"}}]}]}
+
+BEFORE YOU ANSWER, CHECK
+- Every { has a matching } and every [ has a matching ]. Count them.
+- No trailing comma before any } or ].
+- Every key and every string value is in double quotes. A quote inside a
+  string is written as a backslash followed by a quote.
+- Keep descriptions to one short sentence. A long answer risks being cut
+  off, and a cut-off answer is unusable - brevity matters more than flourish.
+
 STORYBOARD 1 - concept "Problem to Solution": open on the pain, turn on the product, close on relief. Arc: frustration -> relief.
 STORYBOARD 2 - concept "Feature Showcase": three or four features in rapid sequence with callouts. Arc: "here is everything you get".
 STORYBOARD 3 - concept "Hero Shot + Benefit": open on the most impressive frame, then cascade into outcomes and ROI. Arc: "this is powerful and it is easy".`;
@@ -268,14 +320,50 @@ DEVICE: ${input.device}
 
 Write the three storyboards.`;
 
-  const raw = await requestJson({
-    model: env.anthropicModel,
-    maxTokens: 12_000,
-    system: STORYBOARD_SYSTEM,
-    content: [{ type: "text", text: prompt }],
-    schema: storyboardsJsonSchema,
-    label: "storyboard generation",
-  });
+  // Three storyboards of six scenes run well past 12k tokens, which is what
+  // truncated the response and produced the malformed JSON. Streamed,
+  // because a ceiling this high on a non-streaming request hits the HTTP
+  // timeout instead.
+  const ask = (maxTokens: number): Promise<unknown> =>
+    requestJson({
+      model: env.anthropicModel,
+      maxTokens,
+      system: STORYBOARD_SYSTEM,
+      content: [{ type: "text", text: prompt }],
+      schema: storyboardsJsonSchema,
+      label: "storyboard generation",
+      stream: true,
+    });
+
+  /**
+   * A cut-off or unparseable body is recoverable and must never reach the
+   * user as an error. A network, auth or rate-limit failure is not
+   * recoverable and must not be disguised as a generic template ad, so those
+   * are rethrown.
+   */
+  const isRecoverable = (error: unknown): boolean =>
+    error instanceof TruncatedResponseError || error instanceof SyntaxError;
+
+  let raw: unknown;
+  try {
+    raw = await ask(32_000);
+  } catch (error) {
+    if (!isRecoverable(error)) throw error;
+    logger.warn(
+      { error: (error as Error).message },
+      "storyboards came back unusable - retrying with a larger budget",
+    );
+    try {
+      raw = await ask(64_000);
+    } catch (retryError) {
+      if (!isRecoverable(retryError)) throw retryError;
+      logger.error(
+        { error: (retryError as Error).message },
+        "storyboards unusable twice - falling back to templates",
+      );
+      return buildFallbackStoryboards(input.analysis, input.assets);
+    }
+  }
 
   // Claude sometimes answers with a bare array instead of the wrapper.
   const wrapped = Array.isArray(raw) ? { storyboards: raw } : raw;
