@@ -162,6 +162,14 @@ Three, all load-bearing:
    structured outputs (`output_config.format`) with a JSON Schema, and fall
    back to parsing a free-form JSON body if the schema is rejected.
 
+## Not built
+
+- **Auth.** The brief marked JWT middleware optional and there is no sign-in
+  flow, so there is nothing to authenticate; jobs are anonymous and reachable
+  by id. Adding it means a Supabase session on the frontend, a bearer-token
+  check in front of `/api/generate` and `/api/video/:id/*`, and a `user_id`
+  filter on the job store (the column is already in the migration).
+
 ## Known limits
 
 - Sites that hard-block automated browsers (aggressive bot walls) fail capture;

@@ -22,10 +22,14 @@ const TABS: FormatTab[] = [
   { ratio: "1:1", key: "ratio_1_1", label: "1:1", platform: "Instagram · LinkedIn" },
 ];
 
+/**
+ * Portrait is sized by height, not width: `w-full` plus a max-height caps the
+ * box at the wrong aspect and letterboxes the video inside its own player.
+ */
 const ASPECT_CLASS: Record<AspectRatio, string> = {
-  "9:16": "aspect-9/16 max-h-[68vh]",
-  "16:9": "aspect-video",
-  "1:1": "aspect-square",
+  "9:16": "h-[68vh] w-auto max-w-full aspect-9/16",
+  "16:9": "w-full aspect-video",
+  "1:1": "w-full max-w-[540px] aspect-square",
 };
 
 export const PreviewVideo: React.FC<{
