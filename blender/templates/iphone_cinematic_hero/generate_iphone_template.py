@@ -207,12 +207,13 @@ def assemble(frames_dir: str, out_path: str, fps: int, start: int, step: int) ->
     if not ffmpeg:
         print("ffmpeg not found; frames are in", frames_dir)
         return
-    # A contiguous numbering for ffmpeg, whatever the step.
+    # A contiguous numbering for ffmpeg, whatever the step. The concat
+    # demuxer resolves paths relative to the list, so names only.
     listing = os.path.join(frames_dir, "frames.txt")
     names = sorted(n for n in os.listdir(frames_dir) if n.startswith("frame_") and n.endswith(".png"))
     with open(listing, "w", encoding="utf-8") as fh:
         for name in names:
-            fh.write(f"file '{os.path.join(frames_dir, name)}'\nduration {step / fps}\n")
+            fh.write(f"file '{name}'\nduration {step / fps}\n")
     cmd = [
         ffmpeg, "-y", "-loglevel", "error",
         "-f", "concat", "-safe", "0", "-i", listing,
