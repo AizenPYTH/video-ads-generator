@@ -32,6 +32,11 @@ const TITANIUM =
   "linear-gradient(180deg, #4a4a52 0%, #2c2c33 30%, #1c1c21 70%, #3b3b43 100%)";
 const TITANIUM_EDGE =
   "linear-gradient(90deg, #6b6b75 0%, #2a2a31 20%, #1a1a1f 50%, #2a2a31 80%, #6b6b75 100%)";
+/** The same body under a soft studio key from the upper left: the lit rim reads as brushed metal. */
+const TITANIUM_EDGE_STUDIO =
+  "linear-gradient(100deg, #d6d6dd 0%, #8e8e98 14%, #4a4a53 38%, #35353d 60%, #7a7a84 86%, #b8b8c1 100%)";
+const TITANIUM_STUDIO =
+  "linear-gradient(160deg, #8a8a94 0%, #5c5c66 30%, #3c3c44 70%, #6e6e78 100%)";
 
 /** How many body slices between the front and back faces. */
 const EDGE_SLICES = 7;
@@ -50,9 +55,13 @@ export const IPhone: React.FC<{
   brightness?: number;
   /** Where the glass sheen falls; usually tied to the yaw. */
   sheenAngle?: number;
+  /** "dark" for a black set, "studio" for a light one where the rim should catch light. */
+  finish?: "dark" | "studio";
   transform?: string;
-}> = ({ width, screen, brightness = 1, sheenAngle = 112, transform }) => {
+}> = ({ width, screen, brightness = 1, sheenAngle = 112, finish = "dark", transform }) => {
   const g = iphoneGeometry(width);
+  const edge = finish === "studio" ? TITANIUM_EDGE_STUDIO : TITANIUM_EDGE;
+  const back = finish === "studio" ? TITANIUM_STUDIO : TITANIUM;
   const island = {
     width: g.screenWidth * IPHONE.island.width,
     height: g.screenWidth * IPHONE.island.height,
@@ -79,7 +88,7 @@ export const IPhone: React.FC<{
                 position: "absolute",
                 inset: 0,
                 borderRadius: g.radius,
-                background: TITANIUM_EDGE,
+                background: edge,
               }}
             />
           </Placed>
@@ -94,7 +103,7 @@ export const IPhone: React.FC<{
             inset: 0,
             backfaceVisibility: "hidden",
             borderRadius: g.radius,
-            background: TITANIUM,
+            background: back,
             boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.08)",
           }}
         >

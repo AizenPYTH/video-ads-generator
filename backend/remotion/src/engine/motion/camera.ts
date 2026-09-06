@@ -19,6 +19,20 @@ export interface CameraState {
   x: number;
   y: number;
   roll: number;
+  /**
+   * Vertical field of view in degrees. Sets the perspective distance the
+   * way a lens does: 24 is wide and dramatic, 50 is a normal lens, 85 is a
+   * portrait lens that flattens the subject. 0 means "use the stage's own
+   * default", which is what every template written before this does.
+   */
+  fov: number;
+  /**
+   * Depth of field. `focus` is the stage-Z the lens is focused at, and
+   * `aperture` how many stage px either side stay sharp; 0 aperture means
+   * everything is sharp. Applied by `depthBlur`, not by the stage itself.
+   */
+  focus: number;
+  aperture: number;
 }
 
 export const CAMERA_REST: CameraState = {
@@ -28,7 +42,32 @@ export const CAMERA_REST: CameraState = {
   x: 0,
   y: 0,
   roll: 0,
+  fov: 0,
+  focus: 0,
+  aperture: 0,
 };
+
+/**
+ * Perspective distance for a vertical field of view on a canvas of the
+ * given height - the pinhole relation, so a 50deg lens on a 1920px-tall
+ * frame puts the eye about 2060px from the plane.
+ */
+export function perspectiveFor(fov: number, height: number): number {
+  const half = ((Math.max(5, Math.min(120, fov)) / 2) * Math.PI) / 180;
+  return height / 2 / Math.tan(half);
+}
+
+/**
+ * Blur radius for something at stage-Z `z` under the camera's focus. Zero
+ * inside the aperture, growing linearly beyond it, capped so a far
+ * background reads as soft rather than smeared.
+ */
+export function depthBlur(camera: CameraState, z: number, max = 14): number {
+  if (camera.aperture <= 0) return 0;
+  const distance = Math.abs(z - camera.focus);
+  if (distance <= camera.aperture) return 0;
+  return Math.min(max, ((distance - camera.aperture) / camera.aperture) * 3);
+}
 
 export type CameraKeyframe = TrackKeyframe<keyof CameraState>;
 
@@ -43,6 +82,9 @@ export function cameraAt(
     x: track(frame, keyframes, "x", CAMERA_REST.x),
     y: track(frame, keyframes, "y", CAMERA_REST.y),
     roll: track(frame, keyframes, "roll", CAMERA_REST.roll),
+    fov: track(frame, keyframes, "fov", CAMERA_REST.fov),
+    focus: track(frame, keyframes, "focus", CAMERA_REST.focus),
+    aperture: track(frame, keyframes, "aperture", CAMERA_REST.aperture),
   };
 }
 
@@ -77,5 +119,8 @@ export function addCamera(a: CameraState, b: Partial<CameraState>): CameraState 
     x: a.x + (b.x ?? 0),
     y: a.y + (b.y ?? 0),
     roll: a.roll + (b.roll ?? 0),
+    fov: b.fov ?? a.fov,
+    focus: b.focus ?? a.focus,
+    aperture: b.aperture ?? a.aperture,
   };
 }
