@@ -260,6 +260,7 @@ def configure_render(scene: bpy.types.Scene) -> None:
     r.resolution_percentage = 100
     r.film_transparent = False
     r.filter_size = 1.5
+    r.use_persistent_data = True
     r.use_motion_blur = True
     r.motion_blur_shutter = 0.5
     r.image_settings.file_format = "PNG"
@@ -520,7 +521,7 @@ def build_screen_material(screen: bpy.types.Object) -> bpy.types.Material:
         n.link(v, combine.inputs[1])
         mapping = n.add("ShaderNodeMapping", f"{name}_FIT", vector_type="POINT")
         n.link(combine.outputs[0], mapping.inputs["Vector"])
-        tex = n.add("ShaderNodeTexImage", f"{name}_TEX", interpolation="Cubic", extension="EXTEND")
+        tex = n.add("ShaderNodeTexImage", f"{name}_TEX", interpolation="Linear", extension="EXTEND")
         tex.image = image
         n.link(mapping.outputs[0], tex.inputs[0])
         return tex.outputs["Color"]
@@ -749,6 +750,29 @@ def emission_material(name: str, color=(1, 1, 1, 1), strength: float = 1.0) -> b
     return mat
 
 
+def build_overlay_rig(cam: bpy.types.Object, focus: bpy.types.Object) -> bpy.types.Object:
+    """
+    Parent for the logo and text. It is a similarity transform from the
+    lens: uniform scale = (camera-to-focus distance) / OVERLAY_DEPTH. The
+    children keep their keyframed place and size in the frame exactly, and
+    land on the focus plane, so depth of field never softens them.
+    """
+    col = collection("CAMERA")
+    rig = empty("OVERLAY_RIG", col, "PLAIN_AXES", 0.02)
+    rig.parent = cam
+    for index in range(3):
+        fcurve = rig.driver_add("scale", index)
+        driver = fcurve.driver
+        driver.type = "SCRIPTED"
+        var = driver.variables.new()
+        var.name = "d"
+        var.type = "LOC_DIFF"
+        var.targets[0].id = cam
+        var.targets[1].id = focus
+        driver.expression = f"d / {abs(OVERLAY_DEPTH)}"
+    return rig
+
+
 def build_logo(cam: bpy.types.Object) -> bpy.types.Object:
     col = collection("LOGO")
     image = bpy.data.images["LOGO"]
@@ -776,7 +800,7 @@ def build_logo(cam: bpy.types.Object) -> bpy.types.Object:
     for node in list(tree.nodes):
         tree.nodes.remove(node)
     n = Nodes(tree)
-    tex = n.add("ShaderNodeTexImage", "LOGO_TEX", interpolation="Cubic", extension="CLIP")
+    tex = n.add("ShaderNodeTexImage", "LOGO_TEX", interpolation="Linear", extension="CLIP")
     tex.image = image
     alpha = n.value("LOGO_ALPHA", 1.0)
     emit = n.add("ShaderNodeEmission", "EMIT")
@@ -971,10 +995,11 @@ def build() -> None:
     build_environment(scene)
     build_lights(controller)
     cam, target = build_camera(scene, focus)
-    logo = build_logo(cam)
+    rig = build_overlay_rig(cam, focus)
+    logo = build_logo(rig)
     texts = collection("TEXT")
-    tagline = text_object("TEXT_TAGLINE", "Do more, faster.", FONT_BOLD, 0.021, cam, texts)
-    cta = text_object("TEXT_CTA", "Download on the App Store", FONT_REGULAR, 0.0105, cam, texts, (0.82, 0.84, 0.9, 1))
+    tagline = text_object("TEXT_TAGLINE", "Do more, faster.", FONT_BOLD, 0.021, rig, texts)
+    cta = text_object("TEXT_CTA", "Download on the App Store", FONT_REGULAR, 0.0105, rig, texts, (0.82, 0.84, 0.9, 1))
 
     animate(scene, device_root, cam, target, controller, logo, tagline, cta, bpy.data.materials["SCREEN_MAT"])
 

@@ -15,10 +15,14 @@ What it does, in order:
   4. sets the tagline and CTA strings (empty string hides the object)
   5. renders the frame range as PNGs, then assembles an MP4 with ffmpeg
 
-Quality presets (Cycles on CPU, denoised):
-  draft    25 %  16 spp  no motion blur      a few minutes, for timing
-  preview  50 %  40 spp  no motion blur      judge light, motion, screen
-  final   100 % 128 spp  motion blur         the deliverable
+Quality profiles:
+  preview  640x360, Cycles 16 spp, fast denoise      judge motion and light quickly
+  final    1920x1080 native, Cycles 32 spp adaptive, fast denoise, 1 px filter,
+           no motion blur (the moves are slow; blur only costs sharpness)
+
+The renderer is picked at start: any GPU Blender can see (OptiX, CUDA, HIP,
+Metal, oneAPI) is used, otherwise the CPU; --engine eevee switches to EEVEE
+for machines with a GPU, where it is near real time and very close in look.
 
 Nothing here touches a keyframe: the animation is the template's.
 """
@@ -38,10 +42,13 @@ BLEND = os.path.join(HERE, "iphone_cinematic_hero.blend")
 DEFAULT_OUT = os.path.abspath(os.path.join(HERE, "..", "..", "out", "iphone_cinematic_hero"))
 
 QUALITY = {
-    "draft": {"scale": 25, "samples": 16, "motion_blur": False},
-    "preview": {"scale": 50, "samples": 40, "motion_blur": False},
-    "final": {"scale": 100, "samples": 128, "motion_blur": True},
+    # scale is a percentage of the template's 1920x1080.
+    "preview": {"scale": 33, "samples": 16, "adaptive": 0.1, "prefilter": "FAST", "bounces": 3, "filter": 1.0, "eevee_samples": 16, "crf": 20},
+    "final": {"scale": 100, "samples": 32, "adaptive": 0.05, "prefilter": "FAST", "bounces": 4, "filter": 1.0, "eevee_samples": 48, "crf": 16},
 }
+
+# Cycles compute backends, best first. The first one with a device wins.
+GPU_BACKENDS = ("OPTIX", "CUDA", "HIP", "METAL", "ONEAPI")
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -54,6 +61,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--out", default=DEFAULT_OUT, help="output directory (frames/ and the mp4)")
     parser.add_argument("--name", default="iphone_cinematic_hero", help="mp4 basename")
     parser.add_argument("--quality", choices=sorted(QUALITY), default="preview")
+    parser.add_argument("--engine", choices=["cycles", "eevee"], default="cycles", help="eevee is near real time on a GPU and close in look; cycles is the reference")
+    parser.add_argument("--samples", type=int, help="override the profile's Cycles samples")
+    parser.add_argument("--cpu", action="store_true", help="ignore any GPU")
     parser.add_argument("--frames", help="frame range to render, e.g. 1-300 or 84-156 (default: whole template)")
     parser.add_argument("--step", type=int, default=1, help="render every Nth frame (timing checks)")
     parser.add_argument("--fps", type=int, help="override output fps for the mp4 (default: the scene's)")
@@ -162,12 +172,61 @@ def set_text(name: str, body: str | None) -> None:
 # --------------------------------------------------------------------------
 
 
+def pick_device(scene: bpy.types.Scene, allow_gpu: bool) -> str:
+    """
+    Enables the best compute backend Blender can actually see and returns a
+    label for the log. Never assumes: it asks Cycles for its device list.
+    """
+    prefs = bpy.context.preferences.addons["cycles"].preferences
+    if allow_gpu:
+        for backend in GPU_BACKENDS:
+            try:
+                prefs.compute_device_type = backend
+                prefs.refresh_devices()
+            except Exception:
+                continue
+            gpus = [d for d in prefs.devices if d.type != "CPU"]
+            if gpus:
+                for d in prefs.devices:
+                    d.use = d.type != "CPU"
+                scene.cycles.device = "GPU"
+                return f"GPU {backend}: " + ", ".join(d.name for d in gpus)
+    prefs.compute_device_type = "NONE"
+    scene.cycles.device = "CPU"
+    return f"CPU ({os.cpu_count()} threads)"
+
+
 def configure(scene: bpy.types.Scene, args: argparse.Namespace) -> tuple[int, int]:
     preset = QUALITY[args.quality]
-    scene.render.resolution_percentage = preset["scale"]
-    scene.cycles.samples = preset["samples"]
-    scene.render.use_motion_blur = preset["motion_blur"]
-    scene.cycles.use_denoising = True
+    r = scene.render
+    r.resolution_percentage = preset["scale"]
+    r.filter_size = preset["filter"]
+    r.use_motion_blur = False
+    r.use_persistent_data = True
+    c = scene.cycles
+    c.samples = args.samples or preset["samples"]
+    c.use_adaptive_sampling = True
+    c.adaptive_threshold = preset["adaptive"]
+    c.use_denoising = True
+    c.denoiser = "OPENIMAGEDENOISE"
+    c.denoising_input_passes = "RGB_ALBEDO_NORMAL"
+    c.denoising_prefilter = preset["prefilter"]
+    c.max_bounces = preset["bounces"]
+    c.diffuse_bounces = min(c.diffuse_bounces, preset["bounces"])
+    c.glossy_bounces = min(c.glossy_bounces, preset["bounces"])
+    c.transmission_bounces = min(c.transmission_bounces, preset["bounces"])
+    if args.engine == "eevee":
+        r.engine = "BLENDER_EEVEE"
+        e = scene.eevee
+        e.taa_render_samples = preset["eevee_samples"]
+        for attr, value in (("use_raytracing", True), ("use_shadows", True)):
+            if hasattr(e, attr):
+                setattr(e, attr, value)
+        device = "GPU/GL (EEVEE)"
+    else:
+        r.engine = "CYCLES"
+        device = pick_device(scene, allow_gpu=not args.cpu)
+    print(f"engine {r.engine} on {device}; {r.resolution_x * r.resolution_percentage // 100}x{r.resolution_y * r.resolution_percentage // 100}, {c.samples} spp" if r.engine == "CYCLES" else f"engine EEVEE; {r.resolution_x * r.resolution_percentage // 100}x{r.resolution_y * r.resolution_percentage // 100}, {scene.eevee.taa_render_samples} samples")
     if args.threads:
         scene.render.threads_mode = "FIXED"
         scene.render.threads = args.threads
@@ -202,7 +261,12 @@ def render_frames(scene: bpy.types.Scene, start: int, end: int, step: int, frame
     return written
 
 
-def assemble(frames_dir: str, out_path: str, fps: int, start: int, step: int) -> None:
+def assemble(frames_dir: str, out_path: str, fps: int, start: int, step: int, crf: int = 16) -> None:
+    """
+    H.264 High profile, 4:2:0, CRF-driven with a bitrate ceiling: what
+    TikTok, Reels and Shorts ingest without re-encoding artefacts. CRF 16
+    keeps text edges and UI lines intact; the dark set compresses well.
+    """
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         print("ffmpeg not found; frames are in", frames_dir)
@@ -217,8 +281,12 @@ def assemble(frames_dir: str, out_path: str, fps: int, start: int, step: int) ->
     cmd = [
         ffmpeg, "-y", "-loglevel", "error",
         "-f", "concat", "-safe", "0", "-i", listing,
-        "-vf", "fps=%d,format=yuv420p" % (fps // step if step > 1 else fps),
-        "-c:v", "libx264", "-preset", "slow", "-crf", "17", "-movflags", "+faststart",
+        # 4:2:0 needs even dimensions; a percentage of 1920x1080 can land on odd ones.
+        "-vf", "fps=%d,scale=trunc(iw/2)*2:trunc(ih/2)*2:flags=lanczos,format=yuv420p" % (fps // step if step > 1 else fps),
+        "-c:v", "libx264", "-preset", "slow", "-profile:v", "high", "-level", "4.2",
+        "-crf", str(crf), "-maxrate", "24M", "-bufsize", "48M",
+        "-x264-params", "aq-mode=3:deblock=-1,-1",
+        "-movflags", "+faststart",
         out_path,
     ]
     subprocess.run(cmd, check=True)
@@ -251,7 +319,7 @@ def main(argv: list[str]) -> None:
     print(f"rendering {args.quality}: frames {start}-{end} step {args.step} at {scene.render.resolution_percentage}% / {scene.cycles.samples} spp -> {frames_dir}")
     render_frames(scene, start, end, args.step, frames_dir)
     if not args.no_video:
-        assemble(frames_dir, os.path.join(args.out, f"{args.name}.mp4"), args.fps or scene.render.fps, start, args.step)
+        assemble(frames_dir, os.path.join(args.out, f"{args.name}.mp4"), args.fps or scene.render.fps, start, args.step, QUALITY[args.quality]["crf"])
 
 
 if __name__ == "__main__":

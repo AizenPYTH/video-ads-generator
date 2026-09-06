@@ -19,8 +19,9 @@ inside it.
 
 Both Cycles (CPU, OpenImageDenoise) and EEVEE (llvmpipe over EGL) render.
 The templates use Cycles: real reflections, soft shadows and depth of field
-are what the look is made of. On four cores a denoised 1080p frame of the
-iPhone template takes about a minute; a 540p preview frame about 15 s.
+are what the look is made of. There is no GPU in this environment (checked:
+Cycles lists only the CPU, no /dev/dri); the numbers below are four CPU
+cores, and the generator picks up a GPU by itself where one exists.
 
 ## Template: iPhone Cinematic Hero
 
@@ -81,11 +82,14 @@ Collections `DEVICE`, `CAMERA`, `LIGHTS`, `ENVIRONMENT`, `SCREENS`, `LOGO`,
 - Lights: `KEY` (0.9×1.3 m area, warm, upper left), `FILL` (large, cool,
   right), `TOP_STRIP` (the highlight that travels across the glass),
   `RIM_LEFT` / `RIM_RIGHT` (thin strips behind the phone for the titanium
-  edges), `BACKGROUND_POOL` (a spot on the cyclorama for separation).
+  edges, light-linked to the phone so they never paint the floor),
+  `BACKGROUND_WASH` (a soft area light on the cyclorama for separation).
 - `STUDIO_CYC`: floor, 0.5 m cove, wall, in graphite with a soft gloss so
   the phone has a floor reflection and a contact shadow.
-- `LOGO`, `TEXT_TAGLINE`, `TEXT_CTA` are parented to the camera at the focus
-  distance of the wide shots, so they sit in the frame like a title card.
+- `LOGO`, `TEXT_TAGLINE`, `TEXT_CTA` hang from `OVERLAY_RIG`, a camera child
+  whose driver scales it to the camera-to-focus distance: they sit in the
+  frame like a title card and always on the focus plane, so depth of field
+  never softens them.
 
 ### Timeline (30 fps, 300 frames)
 
@@ -111,10 +115,37 @@ Collections `DEVICE`, `CAMERA`, `LIGHTS`, `ENVIRONMENT`, `SCREENS`, `LOGO`,
 ./blender/bin/bpy blender/templates/iphone_cinematic_hero/generate_iphone_template.py \
   --screen1 a.png --screen2 b.png --logo logo.png \
   --tagline "Do more, faster." --cta "Download on the App Store" \
-  --quality preview --out blender/out/demo
+  --quality final --out blender/out/demo
 ```
 
-`--quality draft|preview|final` sets scale, samples and motion blur;
-`--frames 84-156` renders a slice; `--step 3` every third frame; frames
-already on disk are skipped, so an interrupted render resumes. Output is a
-PNG sequence plus an H.264 MP4 (CRF 17, faststart) assembled with ffmpeg.
+Two profiles, both Cycles with OpenImageDenoise, no motion blur (the moves
+are slow enough that blur only costs sharpness):
+
+| Profile | Frame | Samples | Denoise | Filter | Encode | CPU, 4 cores | GPU (RTX-class, est.) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `preview` | 640×360 | 16, adaptive 0.1 | fast prefilter | 1.0 px | H.264 CRF 20 | ~5 s/frame, 25 min for 10 s | ~0.3 s/frame |
+| `final` | 1920×1080 native | 32, adaptive 0.05 | fast prefilter | 1.0 px | H.264 High 4.2, CRF 16, 24 Mb/s cap, 4:2:0 | ~85 s/frame, 7 h for 10 s | ~2–4 s/frame |
+
+The device is detected at start, never assumed: the first of OptiX, CUDA,
+HIP, Metal, oneAPI with a device is used, otherwise the CPU, and the log
+says which. `--engine eevee` renders with EEVEE: on a GPU it is near real
+time and, on this scene, very close to Cycles in look (tested side by side);
+without a GPU it runs on software GL and gains nothing. `--samples N`
+overrides the profile, `--frames 84-156` renders a slice, `--step 3` every
+third frame; frames already on disk are skipped, so an interrupted render
+resumes.
+
+Why it is sharp now (measured on 1080p frames, Laplacian variance of the
+tagline crop): the logo and text used to sit at a fixed 0.66 m from the lens
+while the focus plane drifted to 0.74 m in the outro, 4–9 px of defocus.
+They now hang from `OVERLAY_RIG`, a camera child whose driver scales it to
+the camera-to-focus distance, so they keep their exact place in the frame
+and stay on the focus plane: text sharpness 22.6 → 74 at the same settings.
+Screens and logo are sampled at their native resolution with linear
+filtering (no downscale anywhere in the pipeline); the render filter went
+from 1.5 px to 1.0 px. 128 → 32 samples with the fast denoiser prefilter is
+indistinguishable on this scene and 3× faster.
+
+Screens can be any resolution: the shader maps them to the display by UV,
+so a 1179×2556 capture is sampled 1:1 at the push-in (the display is about
+1190 px tall in 1080p). The logo keeps its file resolution and alpha.
