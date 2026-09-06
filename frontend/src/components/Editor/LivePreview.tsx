@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { SceneErrorBoundary, webglAvailable } from "./SceneErrorBoundary";
+import { SceneErrorBoundary } from "./SceneErrorBoundary";
+import { webglAvailable } from "./webgl";
 import { Player, Thumbnail } from "@remotion/player";
 import { ASPECT_DIMENSIONS, FPS } from "@/video/engine/aspect";
 import type { AspectRatio, TemplateDefinition, TemplateInput } from "@/types";

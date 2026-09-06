@@ -29,7 +29,9 @@ export const EndCard: React.FC<{
   const local = frame - from;
   if (local < 0) return null;
 
-  const entry = ease.cinematicOut(progress(local, 0, Math.round(fps * 0.5)));
+  // A slow, symmetric fade: on a light set the scrim is the biggest change
+  // in the whole piece, and a fast-start curve reads as a cut.
+  const entry = ease.smooth(progress(local, 0, Math.round(fps * 0.9)));
   const blackout = ease.cinematicIn(
     progress(frame, durationInFrames - Math.round(fps * 0.4), durationInFrames),
   );

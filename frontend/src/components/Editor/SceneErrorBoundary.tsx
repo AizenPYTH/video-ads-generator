@@ -5,16 +5,6 @@ interface State {
   error: Error | null;
 }
 
-/** True when this browser cannot give us a WebGL context at all. */
-export function webglAvailable(): boolean {
-  try {
-    const canvas = document.createElement("canvas");
-    return Boolean(canvas.getContext("webgl2") ?? canvas.getContext("webgl"));
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Whatever goes wrong inside the 3D preview - a model that fails to load,
  * a lost WebGL context, an image that will not decode - stays inside this
