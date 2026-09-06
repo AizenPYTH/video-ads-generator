@@ -105,8 +105,12 @@ export function useEditor(templateId: string) {
           primary: analysis.colorPalette.primary,
           accent: analysis.colorPalette.accent,
         });
-        if (!current.headline && analysis.keyPoints[0]) {
-          current.setCopy({ headline: analysis.keyPoints[0].slice(0, 60) });
+        // The page's first key point, first sentence only: the DOM fallback
+        // joins headings, and "Pick an animation.Your product goes inside."
+        // is not a headline.
+        const firstPoint = analysis.keyPoints[0]?.split(/(?<=[.!?])\s*/)[0]?.trim();
+        if (!current.headline && firstPoint) {
+          current.setCopy({ headline: firstPoint.slice(0, 60) });
         }
       } catch {
         // Enrichment is a bonus. The screens are already in.
