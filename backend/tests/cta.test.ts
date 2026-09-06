@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { displayUrl, normaliseUrl, resolveCta } from "../src/utils/cta";
-import type { DeviceType } from "../src/types";
 
 const analysis = { name: "Linear", sourceUrl: "https://linear.app" };
 
@@ -43,8 +42,8 @@ describe("displayUrl", () => {
 });
 
 describe("resolveCta", () => {
-  const phone: DeviceType = "iphone_15_pro";
-  const laptop: DeviceType = "macbook_14";
+  const phone = "mobile" as const;
+  const laptop = "desktop" as const;
 
   it("sends a phone to the store and a laptop to the site", () => {
     const metadata = {

@@ -32,4 +32,12 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // Mirrored from backend/remotion/src by scripts/sync-video.mjs. It is
+    // Remotion code, not app code: templates export a definition object
+    // next to their component by design, and fast refresh does not matter
+    // for a module that only ever renders inside a Player.
+    files: ["src/video/**/*.{ts,tsx}"],
+    rules: { "react-refresh/only-export-components": "off" },
+  },
 );

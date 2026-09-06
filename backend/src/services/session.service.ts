@@ -8,16 +8,18 @@ import { env } from "../utils/env";
 import { generateId, nowIso } from "../utils/helpers";
 import { resolveInBucket, writeFile, publicUrl } from "./storage.service";
 import type { Capture, PageMetadata } from "./playwright.service";
-import type { AssetRef } from "../types";
+import type { AssetRef, ImageAsset } from "../types";
 
 export interface UploadSession {
   id: string;
-  fileType: "url" | "screenshot";
+  fileType: "url" | "screenshot" | "appstore";
   sourceUrl?: string;
   metadata: PageMetadata | null;
   assets: AssetRef[];
   /** Storage filenames, parallel to `assets`. */
   files: string[];
+  logo?: ImageAsset;
+  app?: { name: string; publisher: string; appStoreUrl: string };
   createdAt: string;
 }
 
@@ -31,10 +33,12 @@ function evictExpired(): void {
 }
 
 export async function createSession(input: {
-  fileType: "url" | "screenshot";
+  fileType: UploadSession["fileType"];
   sourceUrl?: string;
   metadata: PageMetadata | null;
   captures: Capture[];
+  logo?: ImageAsset;
+  app?: UploadSession["app"];
 }): Promise<UploadSession> {
   const id = generateId();
   const assets: AssetRef[] = [];
@@ -50,6 +54,7 @@ export async function createSession(input: {
       width: capture.width,
       height: capture.height,
       label: capture.label,
+      surface: capture.surface,
     });
   }
 
@@ -60,6 +65,8 @@ export async function createSession(input: {
     metadata: input.metadata,
     assets,
     files,
+    ...(input.logo ? { logo: input.logo } : {}),
+    ...(input.app ? { app: input.app } : {}),
     createdAt: nowIso(),
   };
 
@@ -93,4 +100,34 @@ export async function primaryScreenshots(
   const wanted = session.files.slice(0, count);
   const results = await Promise.all(wanted.map(readCaptureDataUri));
   return results.filter((value): value is string => value !== null);
+}
+
+const EXTENSIONS: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+  "image/svg+xml": "svg",
+};
+
+/**
+ * Stores a logo (or an app icon) and returns it as an asset the templates
+ * can load. Independent of any capture session: a logo is uploaded from the
+ * editor, usually after the screens are already there.
+ */
+export async function storeLogo(input: {
+  buffer: Buffer;
+  mediaType: string;
+  width: number;
+  height: number;
+}): Promise<ImageAsset> {
+  const id = generateId();
+  const extension = EXTENSIONS[input.mediaType] ?? "png";
+  const filename = `logo-${id}.${extension}`;
+  await writeFile("uploads", filename, input.buffer);
+  return {
+    id: `logo-${id}`,
+    url: publicUrl("uploads", filename),
+    width: input.width,
+    height: input.height,
+  };
 }

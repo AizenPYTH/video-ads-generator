@@ -1,10 +1,4 @@
-import { DEVICE_SPECS } from "./constants";
-import type {
-  CallToAction,
-  DeviceType,
-  ProductAnalysis,
-  ProductMetadata,
-} from "../types";
+import type { CallToAction, ProductMetadata, ScreenSurface } from "../types";
 
 /**
  * Accepts what people actually paste - `example.com`, `www.example.com/`,
@@ -52,25 +46,23 @@ export interface ResolvedCta extends Omit<CallToAction, "qrCode"> {
 /**
  * Picks the one link the ad should close on.
  *
- * A phone or tablet mockup ends on a store listing when there is one,
- * because that is where a viewer holding a phone goes next; a laptop or
- * monitor ends on the site. Each falls back to the other rather than
- * showing nothing, and both fall back to the page we captured, so an ad
- * always closes on something actionable.
+ * A template built around a phone ends on a store listing when there is
+ * one, because that is where a viewer holding a phone goes next; one built
+ * around a laptop or monitor ends on the site. Each falls back to the other
+ * rather than showing nothing, and both fall back to the page we captured,
+ * so an ad always closes on something actionable.
  */
 export function resolveCta(
-  device: DeviceType,
+  surface: ScreenSurface,
   metadata: ProductMetadata | undefined,
-  analysis: Pick<ProductAnalysis, "name" | "sourceUrl">,
+  analysis: { name?: string; sourceUrl?: string },
 ): ResolvedCta | null {
   const appStore = normaliseUrl(metadata?.appStoreUrl);
   const playStore = normaliseUrl(metadata?.googlePlayUrl);
   const store = appStore ?? playStore;
-  const site =
-    normaliseUrl(metadata?.productUrl) ?? normaliseUrl(analysis.sourceUrl);
+  const site = normaliseUrl(metadata?.productUrl) ?? normaliseUrl(analysis.sourceUrl);
 
-  const kind = DEVICE_SPECS[device].kind;
-  const handheld = kind === "phone" || kind === "tablet";
+  const handheld = surface === "mobile";
   const target = handheld ? (store ?? site) : (site ?? store);
   if (!target) return null;
 

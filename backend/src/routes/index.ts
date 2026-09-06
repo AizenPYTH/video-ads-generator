@@ -5,6 +5,7 @@ import storyboardRoutes from "./storyboards";
 import generateRoutes from "./generate";
 import videoRoutes from "./video";
 import appStoreRoutes from "./appstore";
+import templateRoutes from "./templates";
 
 const router = Router();
 
@@ -14,5 +15,6 @@ router.use("/storyboards", storyboardRoutes);
 router.use("/generate", generateRoutes);
 router.use("/video", videoRoutes);
 router.use("/appstore", appStoreRoutes);
+router.use("/templates", templateRoutes);
 
 export default router;

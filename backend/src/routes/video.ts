@@ -4,7 +4,6 @@ import { asyncHandler, AppError } from "../middleware/errorHandler";
 import { jobStore } from "../jobs/store";
 import { exists, publicUrl, resolveInBucket } from "../services/storage.service";
 import { slugify } from "../utils/helpers";
-import { ASPECT_TO_OUTPUT_KEY } from "../utils/constants";
 import type { ApiResponse, AspectRatio, StatusResponse } from "../types";
 
 const router = Router();
@@ -62,11 +61,12 @@ router.get(
         message: job.message || messageFor(job.status, job.progress),
         ...(job.outputs
           ? {
-              outputs: {
-                ratio_9_16: publicUrl("videos", job.outputs.ratio_9_16),
-                ratio_16_9: publicUrl("videos", job.outputs.ratio_16_9),
-                ratio_1_1: publicUrl("videos", job.outputs.ratio_1_1),
-              },
+              outputs: Object.fromEntries(
+                Object.entries(job.outputs).map(([aspect, filename]) => [
+                  aspect,
+                  publicUrl("videos", filename),
+                ]),
+              ) as Partial<Record<AspectRatio, string>>,
             }
           : {}),
         ...(job.poster ? { poster: publicUrl("posters", job.poster) } : {}),
@@ -87,13 +87,14 @@ router.get(
     const ratio = FORMAT_ALIASES[(req.params.format as string).toLowerCase()];
     if (!ratio) throw new AppError("Unknown format", 400);
 
-    const filename = job.outputs[ASPECT_TO_OUTPUT_KEY[ratio]];
+    const filename = job.outputs[ratio];
+    if (!filename) throw new AppError(`This video was not rendered in ${ratio}`, 404);
     const filePath = resolveInBucket("videos", filename);
     if (!filePath || !exists(filePath)) {
       throw new AppError("The rendered file is no longer available", 410);
     }
 
-    const productName = slugify(job.request.productAnalysis.name) || "video-ad";
+    const productName = slugify(job.request.productName) || "video-ad";
     const downloadName = `${productName}-${ratio.replace(":", "x")}.mp4`;
     res.download(filePath, downloadName);
   }),

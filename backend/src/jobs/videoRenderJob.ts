@@ -1,6 +1,6 @@
 import { createQueue, type JobQueue } from "./queue";
 import { jobStore } from "./store";
-import { renderVideo } from "../services/remotion.service";
+import { renderTemplate } from "../services/remotion.service";
 import { logger } from "../utils/logger";
 import { clamp, nowIso } from "../utils/helpers";
 import type { GenerationRequest, JobStatus } from "../types";
@@ -42,7 +42,7 @@ export function startVideoWorker(): void {
 
     try {
       let lastReported = -1;
-      const { outputs, poster } = await renderVideo({
+      const { outputs, poster } = await renderTemplate({
         jobId,
         request,
         onProgress: (fraction, message) => {

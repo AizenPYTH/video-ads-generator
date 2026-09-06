@@ -59,16 +59,21 @@ export interface ProductAnalysis {
   createdAt: string;
 }
 
-/** A capture the video can display. `id` is what storyboards reference. */
+/**
+ * A capture the video can display. Structurally an `ImageAsset` with a
+ * label, so it drops straight into a template's screen slots.
+ */
 export interface AssetRef {
-  /** e.g. "screenshot_main", "screenshot_1", "screenshot_2" */
+  /** e.g. "screenshot_main", "screenshot_1", "screenshot_desktop_2" */
   id: string;
   /** Absolute URL served by the backend, loadable by headless Chrome. */
   url: string;
   width: number;
   height: number;
-  /** Human label used in Claude prompts so it picks meaningful shots. */
+  /** Human label; also used in Claude prompts so it picks meaningful shots. */
   label: string;
+  /** Which viewport it was captured on. Uploads are guessed from the ratio. */
+  surface?: "mobile" | "desktop";
 }
 
 // ====== STORYBOARD ======
@@ -204,12 +209,32 @@ export interface Storyboard {
   scenes: Scene[];
 }
 
-// ====== LINKS SHOWN AT THE END OF THE AD ======
+// ====== VIDEO TEMPLATES ======
 
 /**
- * Where the viewer should go next. Every field is optional because the run
- * has to work when the user gives us nothing but a URL - `productUrl` then
- * falls back to the page we captured.
+ * The template contract is owned by the Remotion module, which is also what
+ * the frontend mirrors. Re-exported here so the rest of the backend has one
+ * import path.
+ */
+export type {
+  AspectRatio,
+  Brand,
+  CallToAction,
+  Copy,
+  DeviceKind,
+  ImageAsset,
+  ScreenSurface,
+  SlotSpec,
+  TemplateCategory,
+  TemplateDefinition,
+  TemplateInput,
+} from "../../remotion/src/engine/types";
+import type { AspectRatio, ImageAsset, TemplateInput } from "../../remotion/src/engine/types";
+
+/**
+ * Links the ad closes on. Every field is optional because the run has to
+ * work when the user gives us nothing - the outro then falls back to the
+ * page we captured.
  */
 export interface ProductMetadata {
   productUrl?: string;
@@ -218,31 +243,15 @@ export interface ProductMetadata {
   appName?: string;
 }
 
-/**
- * The resolved call to action the renderer draws: one headline, one link and
- * (when generation succeeded) one QR code. Resolved on the server so the
- * composition never has to know which store a device belongs to.
- */
-export interface CallToAction {
-  headline: string;
-  /** Displayed verbatim, so it is normalised before it gets here. */
-  url: string;
-  hint: string;
-  /** PNG data URI, or null when the code could not be generated. */
-  qrCode: string | null;
-}
-
 // ====== VIDEO GENERATION ======
 
-export type AspectRatio = "9:16" | "16:9" | "1:1";
-
+/** What a render job carries. `input` is already complete - placeholders filled. */
 export interface GenerationRequest {
-  storyboard: Storyboard;
-  style: VideoStyle;
-  device: DeviceType;
-  productAnalysis: ProductAnalysis;
-  /** Links the ad closes on. Absent on jobs queued before this existed. */
-  metadata?: ProductMetadata;
+  templateId: string;
+  aspects: AspectRatio[];
+  input: TemplateInput;
+  /** For the download filename. */
+  productName: string;
 }
 
 export type JobStatus =
@@ -253,11 +262,8 @@ export type JobStatus =
   | "completed"
   | "failed";
 
-export interface VideoOutputs {
-  ratio_9_16: string;
-  ratio_16_9: string;
-  ratio_1_1: string;
-}
+/** Storage filenames, one per rendered aspect. Only the requested ones exist. */
+export type VideoOutputs = Partial<Record<AspectRatio, string>>;
 
 export interface VideoJob {
   id: string;
@@ -285,11 +291,15 @@ export interface ApiResponse<T> {
 
 export interface UploadResponse {
   uploadId: string;
-  fileType: "url" | "screenshot";
+  fileType: "url" | "screenshot" | "appstore";
   sourceUrl?: string;
   /** Absolute URL of the primary capture, for the client-side preview. */
   previewUrl: string;
   assets: AssetRef[];
+  /** Uploaded logo, or the app icon when the source was a store listing. */
+  logo?: ImageAsset;
+  /** Store listing details when the source was an App Store URL. */
+  app?: { name: string; publisher: string; appStoreUrl: string };
   pageTitle?: string;
   timestamp: string;
 }
@@ -314,25 +324,8 @@ export interface StatusResponse {
   status: JobStatus;
   progress: number;
   message: string;
-  outputs?: VideoOutputs;
+  /** Public URLs, keyed by aspect. Only the requested ones are present. */
+  outputs?: Partial<Record<AspectRatio, string>>;
   poster?: string;
   error?: string;
 }
-
-// ====== REMOTION INPUT PROPS ======
-
-/**
- * Declared as a type alias, not an interface: Remotion requires composition
- * props to be assignable to `Record<string, unknown>`, and only type aliases
- * get the implicit index signature that makes that true.
- */
-export type VideoCompositionProps = {
-  storyboard: Storyboard;
-  style: VideoStyle;
-  device: DeviceType;
-  palette: ColorPalette;
-  assets: AssetRef[];
-  productName: string;
-  /** null when we have no link worth showing - the outro then just fades. */
-  cta: CallToAction | null;
-};

@@ -1,29 +1,12 @@
-import type { AspectRatio, DeviceType, VideoStyle } from "../types";
+import type { DeviceType, VideoStyle } from "../types";
 
-export const FPS = 30;
+export { FPS } from "../../remotion/src/engine/aspect";
 
 /** Guardrails: Claude occasionally proposes durations outside a usable range. */
 export const MIN_TOTAL_DURATION = 6;
 export const MAX_TOTAL_DURATION = 20;
 export const MIN_SCENE_DURATION = 0.8;
 export const MAX_SCENE_DURATION = 6;
-
-export const ASPECT_RATIOS: AspectRatio[] = ["9:16", "16:9", "1:1"];
-
-export const ASPECT_DIMENSIONS: Record<
-  AspectRatio,
-  { width: number; height: number }
-> = {
-  "9:16": { width: 1080, height: 1920 },
-  "16:9": { width: 1920, height: 1080 },
-  "1:1": { width: 1080, height: 1080 },
-};
-
-export const ASPECT_TO_OUTPUT_KEY = {
-  "9:16": "ratio_9_16",
-  "16:9": "ratio_16_9",
-  "1:1": "ratio_1_1",
-} as const;
 
 /**
  * Physical characteristics of each device mockup. `screenAspect` drives the
