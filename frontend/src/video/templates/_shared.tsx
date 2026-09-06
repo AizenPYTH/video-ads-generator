@@ -19,17 +19,19 @@ export const CopyBand: React.FC<{
   brand: Brand;
   from: number;
   leave: number;
-}> = ({ layout: L, copy, brand, from, leave }) => (
+  /** Dark copy for light sets. */
+  tone?: "light" | "dark";
+}> = ({ layout: L, copy, brand, from, leave, tone = "light" }) => (
   <BoxAt
     box={L.copy}
     align={L.align === "left" ? "flex-start" : "center"}
     justify={L.aspect === "16:9" ? "center" : "flex-start"}
   >
     {copy.headline ? (
-      <Headline text={copy.headline} size={L.headlineSize} from={from} leave={leave} align={L.align} glow={rgba(brand.accent, 0.25)} />
+      <Headline text={copy.headline} size={L.headlineSize} from={from} leave={leave} align={L.align} color={tone === "dark" ? "#151519" : "#fff"} glow={tone === "dark" ? undefined : rgba(brand.accent, 0.25)} style={tone === "dark" ? { textShadow: "none" } : undefined} />
     ) : null}
     {copy.subline ? (
-      <Subline text={copy.subline} size={L.sublineSize} from={from + 10} leave={leave} align={L.align} style={{ marginTop: L.unit * 0.02 }} />
+      <Subline text={copy.subline} size={L.sublineSize} from={from + 10} leave={leave} align={L.align} color={tone === "dark" ? "rgba(20,20,26,0.66)" : undefined} style={{ marginTop: L.unit * 0.02, ...(tone === "dark" ? { textShadow: "none" } : {}) }} />
     ) : null}
   </BoxAt>
 );

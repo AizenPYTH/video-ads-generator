@@ -1,0 +1,123 @@
+import React, { useMemo } from "react";
+import { Environment, Lightformer } from "@react-three/drei";
+import { CanvasTexture, SRGBColorSpace } from "three";
+import { useQuality } from "../scene/quality";
+
+export interface LightingProps {
+  /** Overall exposure of the rig, 0..1.5. */
+  intensity?: number;
+  /** Where the key sits: negative x is camera-left. */
+  keySide?: -1 | 1;
+  /** Floor level, world y. Contact shadow and the floor plane go here. */
+  floorY: number;
+  /** Backdrop tint. Light studio by default. */
+  backdrop?: { center: string; edge: string };
+  /** Turn the floor plane off for shots with no surface at all. */
+  floor?: boolean;
+  /**
+   * Fog start and end, world units from the camera. Start it past the
+   * subject: fog on the subject reads as haze, fog on the floor behind it
+   * reads as a seamless studio.
+   */
+  fog?: [number, number];
+}
+
+/**
+ * A three-point studio, built the way a product photographer builds one:
+ * a big soft key from the upper front-left, a weaker fill from the right,
+ * a strip from above for the top edges, a rim from behind to separate the
+ * body from the backdrop. The soft boxes are Lightformers baked into the
+ * environment map, so metal and glass reflect *them* - that is where the
+ * "real object" look comes from. One directional light throws the actual
+ * shadow.
+ *
+ * Everything is static: the environment renders once and the lights do
+ * not move, so a frame is the same frame every time.
+ */
+export const LightingRig: React.FC<LightingProps> = ({
+  intensity = 1,
+  keySide = -1,
+  floorY,
+  backdrop = { center: "#f2f2f4", edge: "#c9cad1" },
+  floor = true,
+  fog = [6.5, 11.5],
+}) => {
+  const quality = useQuality();
+
+  // The backdrop: a big plane with a radial gradient, unlit, far behind.
+  const backdropTexture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      // Base is the fog colour, so where the fogged floor meets this wall
+      // there is no seam; the highlight sits high, where a soft box would.
+      ctx.fillStyle = backdrop.edge;
+      ctx.fillRect(0, 0, 512, 512);
+      const gradient = ctx.createRadialGradient(256, 150, 10, 256, 190, 330);
+      gradient.addColorStop(0, backdrop.center);
+      gradient.addColorStop(1, backdrop.edge);
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, 512, 512);
+    }
+    const texture = new CanvasTexture(canvas);
+    texture.colorSpace = SRGBColorSpace;
+    return texture;
+  }, [backdrop.center, backdrop.edge]);
+
+  return (
+    <>
+      {/* Fog the colour of the backdrop: the floor plane fades into the wall
+          instead of meeting it on a hard horizon - a seamless cyclorama. */}
+      <fog attach="fog" args={[backdrop.edge, fog[0], fog[1]]} />
+      {/* Re-rendered every frame rather than once: under Remotion's manual
+          loop the first frame can run before the soft boxes are mounted,
+          and a once-only bake would then stay black for the whole render.
+          The virtual scene is five quads; the bake is cheap. */}
+      <Environment resolution={quality.envResolution} frames={Infinity} background={false}>
+        {/* Key: big, soft, upper front on the key side. */}
+        <Lightformer form="rect" intensity={3.2 * intensity} color="#ffffff" scale={[6, 4, 1]} position={[keySide * 4, 5, 5]} target={[0, 0, 0]} />
+        {/* Fill: opposite, lower, weaker, slightly warm. */}
+        <Lightformer form="rect" intensity={0.9 * intensity} color="#fff4ea" scale={[4, 5, 1]} position={[-keySide * 5, 0.5, 4]} target={[0, 0, 0]} />
+        {/* Top strip: catches the top edges of the frame. */}
+        <Lightformer form="rect" intensity={1.8 * intensity} color="#ffffff" scale={[8, 0.8, 1]} position={[0, 6.5, 0]} rotation={[Math.PI / 2, 0, 0]} />
+        {/* Rim: behind and to the fill side, cool, for separation. */}
+        <Lightformer form="rect" intensity={2.2 * intensity} color="#e6ecff" scale={[2.5, 7, 1]} position={[-keySide * 5, 1, -4]} target={[0, 0, 0]} />
+        {/* Floor bounce, faint. */}
+        <Lightformer form="rect" intensity={0.4 * intensity} color="#ffffff" scale={[10, 10, 1]} position={[0, -5, 2]} rotation={[-Math.PI / 2, 0, 0]} />
+      </Environment>
+
+      <directionalLight
+        castShadow
+        position={[keySide * 3, 5, 4]}
+        intensity={2.4 * intensity}
+        color="#ffffff"
+        shadow-mapSize={[quality.shadowMap, quality.shadowMap]}
+        shadow-bias={-0.00015}
+        shadow-normalBias={0.02}
+        shadow-radius={6}
+        shadow-camera-near={0.5}
+        shadow-camera-far={20}
+        shadow-camera-left={-4}
+        shadow-camera-right={4}
+        shadow-camera-top={4}
+        shadow-camera-bottom={-4}
+      />
+      <ambientLight intensity={0.12 * intensity} />
+
+      {/* Backdrop plane, far back and large enough to fill any lens. */}
+      <mesh position={[0, 2, -6]} renderOrder={-10}>
+        <planeGeometry args={[40, 40]} />
+        <meshBasicMaterial map={backdropTexture} toneMapped={false} fog={false} />
+      </mesh>
+
+      {floor ? (
+        <mesh position={[0, floorY, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+          <planeGeometry args={[40, 40]} />
+          <meshStandardMaterial color={backdrop.edge} roughness={0.96} metalness={0} />
+        </mesh>
+      ) : null}
+    </>
+  );
+};

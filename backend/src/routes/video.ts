@@ -118,6 +118,11 @@ export function assetHandler(): Router {
       return;
     }
     // Content is immutable per generated id, so it can be cached hard.
+    // Any origin may read it: the 3D renderer paints captures onto a canvas
+    // that WebGL then uploads, and a canvas holding a cross-origin image
+    // without this header is "tainted" and refused. These are public,
+    // unguessable-id assets with no credentials, so `*` costs nothing.
+    res.setHeader("Access-Control-Allow-Origin", "*");
     res.sendFile(path.resolve(filePath), { maxAge: "1h" });
   });
   return assets;

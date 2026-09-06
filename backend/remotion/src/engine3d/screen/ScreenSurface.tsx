@@ -1,0 +1,192 @@
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { continueRender, delayRender, useCurrentFrame } from "remotion";
+import { CanvasTexture, LinearFilter, SRGBColorSpace } from "three";
+import { useFrame, useThree } from "@react-three/fiber";
+import { drawScreen, type DrawLayer, type ScreenShape } from "./screenCanvas";
+import { scheduleScreens, type ScreenSlot } from "../../engine/content/ScreenSequence";
+import { ease, progress, type EasingFn } from "../../engine/motion/easing";
+import type { ImageAsset } from "../../engine/types";
+
+/**
+ * Loads images for the canvas, holding the Remotion render until they are
+ * decoded. Cross-origin, so the canvas stays clean and WebGL can upload
+ * it - the media host answers with a permissive CORS header for that.
+ */
+export function useImages(assets: ImageAsset[]): {
+  images: Map<string, HTMLImageElement>;
+  /** Call once the loaded images have been painted and rendered. */
+  release: () => void;
+} {
+  const [loaded, setLoaded] = useState<Map<string, HTMLImageElement>>(() => new Map());
+  const handleRef = useRef<number | null>(null);
+  // Keyed by the URL list, not the array: the editor rebuilds the array on
+  // every keystroke and only a changed URL should trigger a reload.
+  const urls = assets.map((asset) => asset.url).join("\n");
+
+  useEffect(() => {
+    const list = urls === "" ? [] : urls.split("\n");
+    let cancelled = false;
+    // Held until the caller says the images are on the GPU, not merely
+    // decoded: Remotion captures the frame the moment every delay is
+    // released, and React has not committed the images by then.
+    const handle = delayRender("Loading screen images");
+    handleRef.current = handle;
+    const entries: Array<Promise<[string, HTMLImageElement | null]>> = list.map(
+      (url) =>
+        new Promise((resolve) => {
+          const image = new Image();
+          image.crossOrigin = "anonymous";
+          image.onload = () => resolve([url, image]);
+          image.onerror = () => {
+            console.warn("[screen] could not load", url);
+            resolve([url, null]);
+          };
+          image.src = url;
+        }),
+    );
+    void Promise.all(entries).then((results) => {
+      if (cancelled) return;
+      const next = new Map<string, HTMLImageElement>();
+      for (const [url, image] of results) if (image) next.set(url, image);
+      setLoaded(next);
+    });
+    return () => {
+      cancelled = true;
+      if (handleRef.current === handle) {
+        continueRender(handle);
+        handleRef.current = null;
+      }
+    };
+  }, [urls]);
+
+  const release = useCallback(() => {
+    if (handleRef.current !== null) {
+      continueRender(handleRef.current);
+      handleRef.current = null;
+    }
+  }, []);
+
+  return { images: loaded, release };
+}
+
+export interface ScreenSequenceSpec {
+  screens: ImageAsset[];
+  from: number;
+  to: number;
+  hold: number;
+  transitionFrames?: number;
+  scrollAmount?: number;
+  scrollEasing?: EasingFn;
+  driftZoom?: number;
+  noLoop?: boolean;
+}
+
+/** Which screenshot shows at `frame`, and how far into a crossfade we are. */
+export function screenStateAt(frame: number, spec: ScreenSequenceSpec): {
+  current: DrawLayer;
+  next: DrawLayer | null;
+  slots: ScreenSlot[];
+} {
+  const { screens, from, to, hold, transitionFrames = 12, scrollAmount = 0.8, scrollEasing = ease.smooth, driftZoom = 1 } = spec;
+  const first = screens[0] as ImageAsset;
+  const slots = scheduleScreens(screens.length, from, to, hold, !spec.noLoop);
+  const clamped = Math.min(Math.max(frame, from), to - 1);
+  let current = slots[0] as ScreenSlot;
+  for (const slot of slots) if (clamped >= slot.start) current = slot;
+  const position = slots.indexOf(current);
+  const nextSlot = slots[position + 1] ?? null;
+  const local = clamped - current.start;
+  const scroll = scrollEasing(progress(local, 0, current.length)) * scrollAmount;
+  const zoom = 1 + (driftZoom - 1) * progress(local, 0, current.length);
+  const t = nextSlot ? ease.cinematicInOut(progress(clamped, nextSlot.start - transitionFrames, nextSlot.start)) : 0;
+
+  return {
+    current: { image: null, asset: screens[current.index % screens.length] ?? first, scroll, zoom, opacity: 1 },
+    next: nextSlot && t > 0 ? { image: null, asset: screens[nextSlot.index % screens.length] ?? first, scroll: 0, zoom: 1, opacity: t } : null,
+    slots,
+  };
+}
+
+/**
+ * A canvas-backed texture painted every frame from the current frame.
+ *
+ * The screen mesh's UVs run 0..1 across the glass, so a canvas the shape
+ * of the glass lands exactly on it: no calibration, and it stays put
+ * through any rotation because it *is* the surface. `flipY` is off to
+ * match glTF's top-down UV convention.
+ */
+export function useScreenTexture(
+  shape: ScreenShape,
+  spec: ScreenSequenceSpec,
+  options: { dim?: number; off?: boolean } = {},
+): CanvasTexture {
+  const frame = useCurrentFrame();
+  const { images, release } = useImages(spec.screens);
+  const advance = useThree((state) => state.advance);
+  // The canvas is created at its final size and the texture right after.
+  // WebGL2 gives a texture immutable storage on first upload; a canvas
+  // that grows afterwards makes every later update overflow that storage
+  // ("Offset overflows texture dimensions") and the screen stays black.
+  // A different shape is a different canvas and a different texture.
+  const canvas = useMemo(() => {
+    const element = document.createElement("canvas");
+    element.width = shape.width;
+    element.height = shape.height;
+    return element;
+  }, [shape.width, shape.height]);
+
+  const texture = useMemo(() => {
+    const t = new CanvasTexture(canvas);
+    t.colorSpace = SRGBColorSpace;
+    t.flipY = false;
+    t.anisotropy = 8;
+    t.minFilter = LinearFilter;
+    t.magFilter = LinearFilter;
+    t.generateMipmaps = false;
+    return t;
+  }, [canvas]);
+
+  useEffect(() => () => texture.dispose(), [texture]);
+
+  // Everything the draw needs, readable from inside the frame loop without
+  // re-subscribing it every frame. Written after commit, read in the loop.
+  const latest = useRef({ frame, spec, options, images, shape });
+  useLayoutEffect(() => {
+    latest.current = { frame, spec, options, images, shape };
+  });
+
+  const paint = useCallback(
+    (gl: { initTexture: (texture: CanvasTexture) => void }) => {
+      const { frame: f, spec: sp, options: op, images: im, shape: sh } = latest.current;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      const state = screenStateAt(f, sp);
+      const withImage = (layer: DrawLayer): DrawLayer => ({ ...layer, image: im.get(layer.asset.url) ?? null });
+      const layers = [withImage(state.current)];
+      if (state.next) layers.push(withImage(state.next));
+      drawScreen(ctx, sh, layers, op);
+      texture.needsUpdate = true;
+      // Upload now rather than at the next material bind: the render that
+      // follows in this same tick must see these pixels.
+      gl.initTexture(texture);
+    },
+    [canvas, texture],
+  );
+
+  // Painted inside the frame loop, before the scene renders, so draw and
+  // upload always land in the same frame - in the Player and on the
+  // server's manual loop alike.
+  useFrame((state) => paint(state.gl), -1);
+
+  // Images land after the first paint. Paint again, render once, and only
+  // then tell Remotion it may capture.
+  const gl = useThree((state) => state.gl);
+  useEffect(() => {
+    if (images.size === 0) return;
+    paint(gl);
+    advance(performance.now());
+    release();
+  }, [images, gl, paint, advance, release]);
+
+  return texture;
+}

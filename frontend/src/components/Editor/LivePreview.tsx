@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { SceneErrorBoundary, webglAvailable } from "./SceneErrorBoundary";
 import { Player, Thumbnail } from "@remotion/player";
 import { ASPECT_DIMENSIONS, FPS } from "@/video/engine/aspect";
 import type { AspectRatio, TemplateDefinition, TemplateInput } from "@/types";
@@ -21,12 +22,26 @@ export const LivePreview: React.FC<{
   const duration = input.durationInFrames ?? template.durationInFrames;
   // The Player re-mounts the tree when inputProps identity changes; memo by content.
   const props = useMemo(() => input, [input]);
+  const [attempt, setAttempt] = useState(0);
+  const needsWebgl = template.devices.length > 0 && template.id.endsWith("-hero");
+  const [hasWebgl] = useState(() => (needsWebgl ? webglAvailable() : true));
+
+  if (!hasWebgl) {
+    return (
+      <div className={className} style={{ aspectRatio: `${size.width} / ${size.height}`, width: "100%" }}>
+        <div role="alert" className="flex h-full w-full items-center justify-center rounded-2xl border border-white/10 bg-white/4 p-6 text-center text-sm text-mist-200">
+          This browser cannot show the 3D preview. The video will still render on the server.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
       className={className}
       style={{ aspectRatio: `${size.width} / ${size.height}`, width: "100%" }}
     >
+      <SceneErrorBoundary key={attempt} onReset={() => setAttempt((n) => n + 1)}>
       <Player
         component={template.component}
         inputProps={props}
@@ -44,6 +59,7 @@ export const LivePreview: React.FC<{
         allowFullscreen
         spaceKeyToPlayOrPause={controls}
       />
+      </SceneErrorBoundary>
     </div>
   );
 };

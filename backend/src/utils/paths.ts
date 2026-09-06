@@ -37,3 +37,6 @@ export const REMOTION_ENTRY = path.join(
   "src",
   "index.ts",
 );
+
+/** Static assets (3D models) the compositions load with `staticFile()`. */
+export const REMOTION_PUBLIC_DIR = path.join(PROJECT_ROOT, "remotion", "public");

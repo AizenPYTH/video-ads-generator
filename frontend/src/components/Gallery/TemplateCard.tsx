@@ -1,12 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Clock, Laptop, Monitor, Smartphone, Sparkles } from "lucide-react";
-import { LivePreview, PreviewFrame } from "@/components/Editor/LivePreview";
-import { placeholderInput } from "@/video/engine/placeholders";
 import { FPS } from "@/video/engine/aspect";
 import { cn } from "@/lib/utils";
 import { CATEGORY_LABELS } from "./categories";
-import type { AspectRatio, TemplateCategory, TemplateDefinition } from "@/types";
+import type { TemplateCategory, TemplateDefinition } from "@/types";
 
 const CATEGORY_ICON: Record<TemplateCategory, typeof Laptop> = {
   laptop: Laptop,
@@ -16,37 +14,44 @@ const CATEGORY_ICON: Record<TemplateCategory, typeof Laptop> = {
   logo: Sparkles,
 };
 
-/** Which aspect a card shows. Square is the honest middle for a grid. */
-function cardAspect(template: TemplateDefinition): AspectRatio {
-  if (template.aspects.includes("1:1")) return "1:1";
-  return template.aspects[0] ?? "1:1";
-}
+/** Pre-rendered by `backend/scripts/render-previews.mjs`. */
+const posterUrl = (id: string) => `/previews/${id}.jpg`;
+const previewUrl = (id: string) => `/previews/${id}.mp4`;
 
 /**
- * A template in the gallery, with the device empty. A single frame until
- * the card is hovered or visible, then the real animation: ten players at
- * 30 fps is a fan, one at a time is a preview.
+ * A template in the gallery. A poster image by default; the pre-rendered
+ * preview loop plays on hover or when the card is the one in view. No
+ * WebGL here at all - ten live scenes on one page is a fan, and a 540p
+ * loop shows the same motion for nothing.
  */
 export const TemplateCard: React.FC<{ template: TemplateDefinition }> = ({ template }) => {
   const [hovered, setHovered] = useState(false);
   const [visible, setVisible] = useState(false);
+  const [posterMissing, setPosterMissing] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
-  const input = useMemo(() => placeholderInput(template), [template]);
-  const aspect = cardAspect(template);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const Icon = CATEGORY_ICON[template.category];
 
   useEffect(() => {
     const node = ref.current;
     if (!node || typeof IntersectionObserver === "undefined") return;
-    const observer = new IntersectionObserver(
-      ([entry]) => setVisible(Boolean(entry?.isIntersecting)),
-      { threshold: 0.6 },
-    );
+    const observer = new IntersectionObserver(([entry]) => setVisible(Boolean(entry?.isIntersecting)), { threshold: 0.75 });
     observer.observe(node);
     return () => observer.disconnect();
   }, []);
 
   const playing = hovered || visible;
+
+  // Play/pause imperatively: `autoPlay` would start every card at once.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (playing) {
+      void video.play().catch(() => undefined);
+    } else {
+      video.pause();
+    }
+  }, [playing]);
 
   return (
     <Link
@@ -61,11 +66,31 @@ export const TemplateCard: React.FC<{ template: TemplateDefinition }> = ({ templ
           "panel panel-hover overflow-hidden rounded-2xl p-2 transition-transform duration-300 group-hover:-translate-y-0.5 group-focus-visible:ring-2 group-focus-visible:ring-brand-400/70",
         )}
       >
-        <div className="relative overflow-hidden rounded-[14px] bg-black">
-          {playing ? (
-            <LivePreview template={template} input={input} aspect={aspect} controls={false} />
+        <div className="relative aspect-square overflow-hidden rounded-[14px] bg-black">
+          {posterMissing ? (
+            <div className="grid h-full w-full place-items-center text-xs text-mist-400">Preview not rendered yet</div>
           ) : (
-            <PreviewFrame template={template} input={input} aspect={aspect} />
+            <>
+              <img
+                src={posterUrl(template.id)}
+                alt=""
+                loading="lazy"
+                onError={() => setPosterMissing(true)}
+                className={cn("absolute inset-0 h-full w-full object-cover transition-opacity duration-300", playing ? "opacity-0" : "opacity-100")}
+              />
+              {playing ? (
+                <video
+                  ref={videoRef}
+                  src={previewUrl(template.id)}
+                  poster={posterUrl(template.id)}
+                  muted
+                  loop
+                  playsInline
+                  preload="metadata"
+                  className="absolute inset-0 h-full w-full object-cover"
+                />
+              ) : null}
+            </>
           )}
           <span className="pointer-events-none absolute top-3 left-3 flex items-center gap-1.5 rounded-full bg-black/55 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur">
             <Icon className="size-3" />

@@ -38,6 +38,15 @@ export default tseslint.config(
     // next to their component by design, and fast refresh does not matter
     // for a module that only ever renders inside a Player.
     files: ["src/video/**/*.{ts,tsx}"],
-    rules: { "react-refresh/only-export-components": "off" },
+    rules: {
+      "react-refresh/only-export-components": "off",
+      // The 3D engine drives three.js imperatively - textures marked dirty,
+      // canvases painted, a camera repositioned - from effects and the frame
+      // loop. The React Compiler's immutability model calls that a mutation
+      // of a hook result; the app does not use the compiler, and the engine
+      // is mirrored from the renderer, where these are the correct calls.
+      "react-hooks/immutability": "off",
+      "react-hooks/refs": "off",
+    },
   },
 );

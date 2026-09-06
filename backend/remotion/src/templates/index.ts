@@ -1,4 +1,6 @@
 import type { TemplateDefinition } from "../engine/types";
+import { template as iphoneHero } from "./iphone-hero";
+import { template as macbookHero } from "./macbook-hero";
 import { template as macbookOpen } from "./macbook-open";
 import { template as macbookOrbit } from "./macbook-orbit";
 import { template as macbookFullframe } from "./macbook-fullframe";
@@ -15,6 +17,8 @@ import { template as logoReveal } from "./logo-reveal";
  * the API all read this list. Order is gallery order.
  */
 export const TEMPLATES: TemplateDefinition[] = [
+  iphoneHero,
+  macbookHero,
   macbookOpen,
   iphoneRise,
   macbookOrbit,

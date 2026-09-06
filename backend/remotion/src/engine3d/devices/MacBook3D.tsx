@@ -1,0 +1,119 @@
+import React, { useMemo } from "react";
+import { RoundedBox } from "@react-three/drei";
+import { type CanvasTexture } from "three";
+import { MM } from "../assets";
+
+/**
+ * A 14" MacBook Pro built from measured parts, as a proper hierarchy:
+ *
+ *   body (deck)
+ *   └─ hinge (a group on the deck's back edge)
+ *      └─ display (the lid)
+ *         └─ screen (the panel, on the lid's inner face)
+ *
+ * The lid rotates about the hinge group only. Closed is 0deg - the lid
+ * lies flat on the deck, screen face down - and open is -100deg, upright
+ * and leaning ten degrees back like a laptop on a desk.
+ *
+ * No source model for this device exists in the repo, so it is modelled
+ * here at real dimensions (312 x 221 x 15.5 mm) with PBR materials; the
+ * hierarchy is the one a rigged asset would have, so swapping in a GLB
+ * later is a matter of replacing the geometry, not the animation.
+ */
+export const MACBOOK_MM = {
+  width: 312.6,
+  depth: 221.2,
+  deckThickness: 9.6,
+  lidThickness: 4.2,
+  lidHeight: 221.2,
+  bezel: 5.5,
+  chin: 12,
+  screenAspect: 3024 / 1964,
+} as const;
+
+export const LID_CLOSED_DEG = 0;
+export const LID_OPEN_DEG = -100;
+
+const ALUMINIUM = { color: "#c7c8cc", metalness: 0.92, roughness: 0.34 };
+const ALUMINIUM_DARK = { color: "#8e9096", metalness: 0.9, roughness: 0.38 };
+
+export const MacBook3D: React.FC<{
+  screen: CanvasTexture;
+  /** Degrees, 0 closed .. -100 open. */
+  lidAngle: number;
+  brightness?: number;
+  position?: [number, number, number];
+  /** Degrees. */
+  rotation?: [number, number, number];
+  scale?: number;
+}> = ({ screen, lidAngle, brightness = 1, position = [0, 0, 0], rotation = [0, 0, 0], scale = 1 }) => {
+  const m = MACBOOK_MM;
+  const w = m.width * MM;
+  const d = m.depth * MM;
+  const deck = m.deckThickness * MM;
+  const lidT = m.lidThickness * MM;
+  const lidH = m.lidHeight * MM;
+  const bezel = m.bezel * MM;
+  const chin = m.chin * MM;
+  const screenW = w - bezel * 2;
+  const screenH = screenW / m.screenAspect;
+
+  const rad = rotation.map((deg) => (deg * Math.PI) / 180) as [number, number, number];
+  const keyRows = useMemo(() => [0, 1, 2, 3, 4, 5], []);
+
+  return (
+    <group position={position} rotation={rad} scale={scale}>
+      {/* ── Body: the deck, resting on y=0 ───────────────────────── */}
+      <group position={[0, deck / 2, 0]}>
+        <RoundedBox args={[w, deck, d]} radius={deck * 0.35} smoothness={6} castShadow receiveShadow>
+          <meshStandardMaterial {...ALUMINIUM} />
+        </RoundedBox>
+        {/* Keyboard well */}
+        <mesh position={[0, deck / 2 + 0.0005, -d * 0.12]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+          <planeGeometry args={[w * 0.82, d * 0.42]} />
+          <meshStandardMaterial color="#1c1c20" metalness={0.2} roughness={0.7} />
+        </mesh>
+        {/* Key caps, suggested as rows */}
+        {keyRows.map((row) => (
+          <mesh key={row} position={[0, deck / 2 + 0.0012, -d * 0.12 - d * 0.19 + row * d * 0.072]} rotation={[-Math.PI / 2, 0, 0]}>
+            <planeGeometry args={[w * 0.8, d * 0.055]} />
+            <meshStandardMaterial color="#2a2a30" metalness={0.1} roughness={0.75} />
+          </mesh>
+        ))}
+        {/* Trackpad */}
+        <mesh position={[0, deck / 2 + 0.0005, d * 0.3]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[w * 0.4, d * 0.28]} />
+          <meshStandardMaterial {...ALUMINIUM_DARK} roughness={0.5} />
+        </mesh>
+      </group>
+
+      {/* ── Hinge: on the back edge of the deck's top surface ────── */}
+      <group position={[0, deck, -d / 2 + lidT]} rotation={[(lidAngle * Math.PI) / 180, 0, 0]}>
+        {/* Display: extends +z from the hinge when closed (lying on the deck). */}
+        <group position={[0, lidT / 2, lidH / 2]}>
+          <RoundedBox args={[w, lidT, lidH]} radius={lidT * 0.45} smoothness={6} castShadow>
+            <meshStandardMaterial {...ALUMINIUM} />
+          </RoundedBox>
+          {/* Bezel face: the inner side, facing -y when closed. */}
+          <mesh position={[0, -lidT / 2 - 0.0004, 0]} rotation={[Math.PI / 2, 0, 0]}>
+            <planeGeometry args={[w - 0.004, lidH - 0.004]} />
+            <meshStandardMaterial color="#0b0b0e" metalness={0.1} roughness={0.5} />
+          </mesh>
+          {/* Screen panel, inset by the bezel, chin at the hinge end. */}
+          <mesh position={[0, -lidT / 2 - 0.0009, (chin - bezel) / 2]} rotation={[Math.PI / 2, 0, 0]}>
+            <planeGeometry args={[screenW, screenH]} />
+            <meshStandardMaterial
+              color="#000000"
+              emissive="#ffffff"
+              emissiveMap={screen}
+              emissiveIntensity={1.05 * brightness}
+              roughness={0.16}
+              metalness={0}
+              envMapIntensity={0.8}
+            />
+          </mesh>
+        </group>
+      </group>
+    </group>
+  );
+};

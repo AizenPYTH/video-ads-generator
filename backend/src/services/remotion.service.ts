@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import { bundle } from "@remotion/bundler";
 import { renderMedia, selectComposition } from "@remotion/renderer";
 import { env } from "../utils/env";
-import { REMOTION_ENTRY } from "../utils/paths";
+import { REMOTION_ENTRY, REMOTION_PUBLIC_DIR } from "../utils/paths";
 import { logger } from "../utils/logger";
 import { aspectKey, compositionId } from "../../remotion/src/engine/aspect";
 import { bucketDir } from "./storage.service";
@@ -17,6 +17,7 @@ export function getBundle(): Promise<string> {
   if (!bundlePromise) {
     bundlePromise = bundle({
       entryPoint: REMOTION_ENTRY,
+      publicDir: REMOTION_PUBLIC_DIR,
       onProgress: (progress) => {
         if (progress % 25 === 0) logger.debug({ progress }, "bundling remotion");
       },

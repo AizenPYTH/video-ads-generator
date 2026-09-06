@@ -1,0 +1,134 @@
+import React from "react";
+import { AbsoluteFill, useCurrentFrame, useVideoConfig } from "remotion";
+import { Scene3D } from "../../engine3d/scene/Scene3D";
+import { CameraRig } from "../../engine3d/camera/CameraRig";
+import { addCamera3D, camera3DAt } from "../../engine3d/camera/state";
+import { LightingRig } from "../../engine3d/lighting/LightingRig";
+import { MacBook3D, LID_CLOSED_DEG, LID_OPEN_DEG, MACBOOK_MM } from "../../engine3d/devices/MacBook3D";
+import { useScreenTexture } from "../../engine3d/screen/ScreenSurface";
+import { laptopScreenShape } from "../../engine3d/screen/screenCanvas";
+import { useQuality } from "../../engine3d/scene/quality";
+import { kf } from "../../engine/motion/keyframes";
+import { drift, ease, progress } from "../../engine/motion/easing";
+import { layoutFor } from "../../engine/layout";
+import { EndCard } from "../../engine/content/EndCard";
+import { CopyBand, Signature, STANDARD_SLOTS } from "../_shared";
+import type { TemplateDefinition, TemplateInput } from "../../engine/types";
+
+const DURATION = 300;
+
+const T = {
+  lidStart: 10,
+  lidEnd: 96,
+  approachEnd: 120,
+  pushEnd: 200,
+  swap: 176,
+  pullStart: 226,
+  pullEnd: 268,
+  headline: 104,
+  copyLeave: 236,
+  endCard: 254,
+};
+
+function framing(aspect: "9:16" | "16:9" | "1:1") {
+  switch (aspect) {
+    case "16:9":
+      return { distance: 9.2, targetX: 1.0, targetY: 0.75, laptopX: 1.0 };
+    case "1:1":
+      return { distance: 11, targetX: 0, targetY: 0.5, laptopX: 0 };
+    default:
+      return { distance: 12.5, targetX: 0, targetY: 0.15, laptopX: 0 };
+  }
+}
+
+const Scene: React.FC<{ input: TemplateInput; endDim: number }> = ({ input, endDim }) => {
+  const frame = useCurrentFrame();
+  const { width, height, fps } = useVideoConfig();
+  const L = layoutFor(width, height);
+  const F = framing(L.aspect);
+  const quality = useQuality();
+  const t = frame / fps;
+
+  // The lid: shut, then opening on its hinge on a curve that breaks the
+  // seal slowly, swings, and settles a couple of degrees past its rest.
+  const lid = kf(frame, [
+    { at: T.lidStart, value: LID_CLOSED_DEG },
+    { at: T.lidEnd, value: LID_OPEN_DEG - 2, easing: ease.cinematicInOut },
+    { at: T.lidEnd + 26, value: LID_OPEN_DEG, easing: ease.settle },
+  ]);
+  // Screen wakes once the panel faces the lens.
+  const brightness = kf(frame, [
+    { at: T.lidStart + 36, value: 0 },
+    { at: T.lidEnd - 4, value: 1, easing: ease.cinematicOut },
+  ]);
+  // The laptop itself turns a few degrees toward the camera as it opens.
+  const yaw = kf(frame, [
+    { at: 0, value: -26 },
+    { at: T.approachEnd, value: -14, easing: ease.cinematicInOut },
+    { at: T.pullEnd, value: -20, easing: ease.smooth },
+  ]);
+
+  // Camera: high and wide over the shut machine, descending and closing
+  // as it opens; a push into the screen; a pull-out for the sign-off.
+  const move = camera3DAt(frame, [
+    { at: 0, distance: F.distance * 1.18, yaw: -6, pitch: 30, fov: 32, targetX: F.targetX, targetY: F.targetY * 0.3 },
+    { at: T.approachEnd, distance: F.distance, yaw: 0, pitch: 12, targetY: F.targetY, easing: ease.cinematicInOut },
+    { at: T.pushEnd, distance: F.distance * 0.72, pitch: 7, targetY: F.targetY * 1.25, easing: ease.cinematicInOut },
+    { at: T.pullStart, distance: F.distance * 0.72 },
+    { at: T.pullEnd, distance: F.distance * 1.02, pitch: 14, yaw: 4, targetY: F.targetY, easing: ease.cinematicInOut },
+  ]);
+  const camera = addCamera3D(move, {
+    yaw: drift(t, 9.1, 0.3),
+    pitch: drift(t, 6.7, 0.18, 2),
+  });
+
+  const screen = useScreenTexture(
+    laptopScreenShape(quality.screenTexture, MACBOOK_MM.screenAspect),
+    { screens: input.screens, from: T.lidStart + 30, to: T.endCard + 10, hold: T.swap - T.lidStart - 30, transitionFrames: 18, scrollAmount: 0.8, driftZoom: 1.02 },
+    { dim: endDim * 0.75 },
+  );
+
+  return (
+    <>
+      <CameraRig camera={camera} aspect={width / height} />
+      <LightingRig floorY={0} floor intensity={1} keySide={-1} backdrop={{ center: "#f1f1f4", edge: "#d7d8de" }} fog={[F.distance * 1.2, F.distance * 2.2]} />
+      <MacBook3D screen={screen} lidAngle={lid} brightness={brightness} position={[F.laptopX, 0, 0]} rotation={[0, yaw, 0]} />
+    </>
+  );
+};
+
+/**
+ * A shut MacBook on a bright desk, filmed from above. The lid opens on
+ * its hinge while the camera comes down to meet it; the site plays on
+ * the panel as the camera pushes in; one content swap; then a pull-out
+ * for the mark and the link. Same rig, same lens language as the phone.
+ */
+const Component: React.FC<TemplateInput> = (input) => {
+  const frame = useCurrentFrame();
+  const { width, height } = useVideoConfig();
+  const L = layoutFor(width, height);
+  const endDim = ease.cinematicIn(progress(frame, T.endCard, T.endCard + 20));
+
+  return (
+    <AbsoluteFill style={{ backgroundColor: "#e9e9ec" }}>
+      <Scene3D background="#e9e9ec">
+        <Scene input={input} endDim={endDim} />
+      </Scene3D>
+      <CopyBand layout={L} copy={input.copy} brand={input.brand} from={T.headline} leave={T.copyLeave} tone="dark" />
+      <Signature layout={L} logo={input.logo} from={30} leave={T.endCard} />
+      <EndCard from={T.endCard} cta={input.cta} brand={input.brand} logo={input.logo} scrim={0.82} />
+    </AbsoluteFill>
+  );
+};
+
+export const template: TemplateDefinition = {
+  id: "macbook-hero",
+  name: "MacBook — Hero",
+  tagline: "A shut laptop on a bright desk. The lid opens on its hinge as the camera comes down to meet it.",
+  category: "laptop",
+  devices: ["macbook"],
+  durationInFrames: DURATION,
+  aspects: ["16:9", "1:1", "9:16"],
+  slots: { ...STANDARD_SLOTS, accent: false },
+  component: Component,
+};
