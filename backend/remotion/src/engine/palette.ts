@@ -1,0 +1,55 @@
+/**
+ * Colour helpers for tinting environments from a brand palette. Pure, so
+ * they can be unit-tested and reused by the editor's swatches.
+ */
+export function hexToRgb(hex: string): [number, number, number] {
+  const clean = hex.replace("#", "");
+  const full =
+    clean.length === 3
+      ? clean
+          .split("")
+          .map((char) => char + char)
+          .join("")
+      : clean;
+  const value = Number.parseInt(full.slice(0, 6), 16);
+  if (!Number.isFinite(value)) return [99, 102, 241];
+  return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
+}
+
+export function rgba(hex: string, alpha: number): string {
+  const [r, g, b] = hexToRgb(hex);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+export function luminance(hex: string): number {
+  const [r, g, b] = hexToRgb(hex).map((channel) => {
+    const c = channel / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  }) as [number, number, number];
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** Toward black by `amount` (0..1). */
+export function darken(hex: string, amount: number): string {
+  const [r, g, b] = hexToRgb(hex).map((channel) =>
+    Math.round(Math.max(0, channel * (1 - amount))),
+  );
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+/** Toward white by `amount` (0..1). */
+export function lighten(hex: string, amount: number): string {
+  const [r, g, b] = hexToRgb(hex).map((channel) =>
+    Math.round(Math.min(255, channel + (255 - channel) * amount)),
+  );
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+/**
+ * A brand hue that is too light to sit behind a device is pulled down until
+ * it is. Marketing palettes are mostly light; the video backdrop is always
+ * dark, because a bright field behind a glowing screen kills the screen.
+ */
+export function backdropFrom(primary: string): string {
+  return luminance(primary) > 0.35 ? darken(primary, 0.86) : darken(primary, 0.7);
+}

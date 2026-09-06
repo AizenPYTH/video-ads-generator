@@ -1,0 +1,126 @@
+import React, { createContext, useContext } from "react";
+import { AbsoluteFill, useVideoConfig } from "remotion";
+import { CAMERA_REST, cameraTransform, type CameraState } from "../motion/camera";
+
+export interface StageInfo {
+  width: number;
+  height: number;
+  /** Perspective distance in px. Larger is flatter. */
+  perspective: number;
+  camera: CameraState;
+  /** The shorter canvas edge - the unit most sizes are expressed in. */
+  unit: number;
+}
+
+const StageContext = createContext<StageInfo | null>(null);
+
+export function useStage(): StageInfo {
+  const stage = useContext(StageContext);
+  if (!stage) throw new Error("useStage() must be used inside <Stage>");
+  return stage;
+}
+
+/**
+ * The 3D world. Children are positioned in stage coordinates - (0, 0) at the
+ * centre, +z toward the camera - inside a `preserve-3d` container that the
+ * camera transform moves as one. Everything that should read as part of the
+ * physical scene goes inside; overlays (copy, end cards) go outside, in
+ * screen space.
+ *
+ * `perspective` defaults to 1.6x the larger canvas edge: wide enough that a
+ * laptop does not keystone, close enough that a dolly still parallaxes.
+ */
+export const Stage: React.FC<{
+  camera?: CameraState;
+  perspective?: number;
+  /** Where the vanishing point sits, as fractions of the canvas. */
+  origin?: { x: number; y: number };
+  children: React.ReactNode;
+}> = ({ camera = CAMERA_REST, perspective, origin = { x: 0.5, y: 0.5 }, children }) => {
+  const { width, height } = useVideoConfig();
+  const distance = perspective ?? Math.max(width, height) * 1.6;
+  const info: StageInfo = {
+    width,
+    height,
+    perspective: distance,
+    camera,
+    unit: Math.min(width, height),
+  };
+
+  return (
+    <StageContext.Provider value={info}>
+      <AbsoluteFill
+        style={{
+          perspective: distance,
+          perspectiveOrigin: `${origin.x * 100}% ${origin.y * 100}%`,
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "50%",
+            width: 0,
+            height: 0,
+            transformStyle: "preserve-3d",
+            transform: cameraTransform(camera, distance),
+          }}
+        >
+          {children}
+        </div>
+      </AbsoluteFill>
+    </StageContext.Provider>
+  );
+};
+
+/**
+ * Places a child in the world. `x`/`y`/`z` are stage pixels from the
+ * centre; rotations are degrees. The child is centred on that point.
+ */
+export const Placed: React.FC<{
+  x?: number;
+  y?: number;
+  z?: number;
+  rotateX?: number;
+  rotateY?: number;
+  rotateZ?: number;
+  scale?: number;
+  width: number;
+  height: number;
+  style?: React.CSSProperties;
+  children: React.ReactNode;
+}> = ({
+  x = 0,
+  y = 0,
+  z = 0,
+  rotateX = 0,
+  rotateY = 0,
+  rotateZ = 0,
+  scale = 1,
+  width,
+  height,
+  style,
+  children,
+}) => (
+  <div
+    style={{
+      position: "absolute",
+      left: -width / 2,
+      top: -height / 2,
+      width,
+      height,
+      transformStyle: "preserve-3d",
+      transform: [
+        `translate3d(${x}px, ${y}px, ${z}px)`,
+        `rotateX(${rotateX}deg)`,
+        `rotateY(${rotateY}deg)`,
+        `rotateZ(${rotateZ}deg)`,
+        `scale(${scale})`,
+      ].join(" "),
+      ...style,
+    }}
+  >
+    {children}
+  </div>
+);

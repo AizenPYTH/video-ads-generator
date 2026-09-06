@@ -1,0 +1,29 @@
+import React from "react";
+import type { Box } from "../layout";
+
+/** A screen-space region, for copy and signatures that sit above the Stage. */
+export const BoxAt: React.FC<{
+  box: Box;
+  align?: "flex-start" | "center" | "flex-end";
+  justify?: "flex-start" | "center" | "flex-end";
+  style?: React.CSSProperties;
+  children: React.ReactNode;
+}> = ({ box, align = "center", justify = "center", style, children }) => (
+  <div
+    style={{
+      position: "absolute",
+      left: box.x,
+      top: box.y,
+      width: box.width,
+      height: box.height,
+      display: "flex",
+      flexDirection: "column",
+      alignItems: align,
+      justifyContent: justify,
+      pointerEvents: "none",
+      ...style,
+    }}
+  >
+    {children}
+  </div>
+);

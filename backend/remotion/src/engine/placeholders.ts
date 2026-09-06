@@ -1,0 +1,143 @@
+import type { Brand, ImageAsset, TemplateDefinition, TemplateInput } from "./types";
+
+/**
+ * What a template shows before the user has put anything in it: a neutral
+ * app interface in the brand hue, drawn as SVG so it costs nothing to load
+ * and scales to any screen. Deliberately generic - it should read as "your
+ * product goes here", not as somebody else's product.
+ */
+function svgDataUri(svg: string): string {
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+function mobileMock(hue: number, variant: number): string {
+  const w = 1170;
+  const h = 2532;
+  const card = (y: number, height: number, alpha: number) =>
+    `<rect x="80" y="${y}" width="${w - 160}" height="${height}" rx="36" fill="hsl(${hue} 30% 96%)" opacity="${alpha}"/>`;
+  const line = (x: number, y: number, width: number, alpha: number) =>
+    `<rect x="${x}" y="${y}" width="${width}" height="26" rx="13" fill="hsl(${hue} 20% 75%)" opacity="${alpha}"/>`;
+  const layouts = [
+    `${card(420, 520, 1)}${line(140, 990, 420, 1)}${line(140, 1040, 720, 0.6)}${card(1120, 300, 1)}${card(1460, 300, 1)}${card(1800, 300, 1)}`,
+    `${card(420, 300, 1)}${card(760, 300, 1)}${card(1100, 300, 1)}${card(1440, 520, 1)}${line(140, 2010, 520, 1)}${line(140, 2060, 780, 0.6)}`,
+    `${card(420, 760, 1)}${line(140, 1230, 360, 1)}${line(140, 1280, 640, 0.6)}${card(1360, 300, 1)}${card(1700, 300, 1)}${card(2040, 300, 1)}`,
+  ];
+  return svgDataUri(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">` +
+      `<rect width="${w}" height="${h}" fill="hsl(${hue} 22% 92%)"/>` +
+      `<rect width="${w}" height="330" fill="hsl(${hue} 55% 48%)"/>` +
+      `<rect x="80" y="180" width="380" height="40" rx="20" fill="#fff" opacity="0.9"/>` +
+      `<circle cx="${w - 130}" cy="200" r="44" fill="#fff" opacity="0.85"/>` +
+      (layouts[variant % layouts.length] as string) +
+      `<rect x="0" y="${h - 200}" width="${w}" height="200" fill="#fff"/>` +
+      `${[0, 1, 2, 3].map((i) => `<circle cx="${180 + i * 270}" cy="${h - 100}" r="28" fill="hsl(${hue} 20% ${i === 0 ? 50 : 80}%)"/>`).join("")}` +
+      `</svg>`,
+  );
+}
+
+function desktopMock(hue: number, variant: number): string {
+  const w = 2880;
+  const h = 1800;
+  const card = (x: number, y: number, width: number, height: number) =>
+    `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="28" fill="hsl(${hue} 30% 97%)"/>`;
+  const line = (x: number, y: number, width: number, alpha: number) =>
+    `<rect x="${x}" y="${y}" width="${width}" height="24" rx="12" fill="hsl(${hue} 20% 74%)" opacity="${alpha}"/>`;
+  const layouts = [
+    `${card(360, 220, 2340, 620)}${line(440, 320, 700, 1)}${line(440, 380, 1100, 0.6)}${card(360, 900, 740, 640)}${card(1160, 900, 740, 640)}${card(1960, 900, 740, 640)}`,
+    `${card(360, 220, 1500, 1320)}${card(1920, 220, 780, 620)}${card(1920, 900, 780, 640)}${line(440, 320, 600, 1)}${line(440, 380, 900, 0.6)}`,
+    `${card(360, 220, 2340, 300)}${card(360, 580, 1140, 960)}${card(1560, 580, 1140, 960)}${line(440, 320, 800, 1)}`,
+  ];
+  return svgDataUri(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">` +
+      `<rect width="${w}" height="${h}" fill="hsl(${hue} 22% 93%)"/>` +
+      `<rect width="300" height="${h}" fill="hsl(${hue} 45% 22%)"/>` +
+      `${[0, 1, 2, 3, 4, 5].map((i) => `<rect x="50" y="${160 + i * 90}" width="200" height="30" rx="15" fill="#fff" opacity="${i === 0 ? 0.9 : 0.35}"/>`).join("")}` +
+      `<rect x="300" width="${w - 300}" height="120" fill="#fff"/>` +
+      `<rect x="380" y="42" width="520" height="36" rx="18" fill="hsl(${hue} 20% 90%)"/>` +
+      (layouts[variant % layouts.length] as string) +
+      `</svg>`,
+  );
+}
+
+function logoMock(hue: number): string {
+  return svgDataUri(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">` +
+      `<rect width="512" height="512" rx="116" fill="hsl(${hue} 60% 52%)"/>` +
+      `<circle cx="256" cy="256" r="120" fill="none" stroke="#fff" stroke-width="44"/>` +
+      `<circle cx="256" cy="256" r="36" fill="#fff"/>` +
+      `</svg>`,
+  );
+}
+
+export const PLACEHOLDER_BRAND: Brand = {
+  name: "Your product",
+  primary: "#5b6cff",
+  accent: "#22d3ee",
+};
+
+const HUE = 232;
+
+export const PLACEHOLDER_MOBILE: ImageAsset[] = [0, 1, 2].map((variant) => ({
+  id: `placeholder-mobile-${variant}`,
+  url: mobileMock(HUE, variant),
+  width: 1170,
+  height: 2532,
+}));
+
+export const PLACEHOLDER_DESKTOP: ImageAsset[] = [0, 1, 2].map((variant) => ({
+  id: `placeholder-desktop-${variant}`,
+  url: desktopMock(HUE, variant),
+  width: 2880,
+  height: 1800,
+}));
+
+export const PLACEHOLDER_LOGO: ImageAsset = {
+  id: "placeholder-logo",
+  url: logoMock(HUE),
+  width: 512,
+  height: 512,
+};
+
+/** A complete input for a template, from placeholders. What the gallery plays. */
+export function placeholderInput(template: TemplateDefinition): TemplateInput {
+  const screens =
+    template.slots.screens.surface === "desktop" ? PLACEHOLDER_DESKTOP : PLACEHOLDER_MOBILE;
+  return {
+    screens: screens.slice(0, Math.max(1, Math.min(template.slots.screens.max, screens.length))),
+    logo: template.slots.logo === "none" ? null : PLACEHOLDER_LOGO,
+    brand: PLACEHOLDER_BRAND,
+    copy: {
+      headline: template.slots.headline ? "Your headline here" : "",
+      subline: template.slots.subline ? "A line about what it does" : "",
+    },
+    cta: template.slots.cta
+      ? { headline: "Visit the website", url: "yourproduct.com", hint: "Scan to open", qrCode: null }
+      : null,
+  };
+}
+
+/**
+ * Fills whatever the user left empty so a template never has to handle
+ * absence. Screens get placeholders only when there are none at all - a
+ * single real screenshot is better than one real one plus two fakes.
+ */
+export function completeInput(
+  template: TemplateDefinition,
+  partial: Partial<TemplateInput>,
+): TemplateInput {
+  const base = placeholderInput(template);
+  const screens = partial.screens && partial.screens.length > 0 ? partial.screens : base.screens;
+  return {
+    screens: screens.slice(0, template.slots.screens.max),
+    logo: partial.logo ?? (template.slots.logo === "required" ? base.logo : null),
+    brand: { ...base.brand, ...(partial.brand ?? {}) },
+    copy: {
+      headline: template.slots.headline ? (partial.copy?.headline ?? base.copy.headline) : "",
+      subline: template.slots.subline ? (partial.copy?.subline ?? base.copy.subline) : "",
+    },
+    cta: template.slots.cta ? (partial.cta ?? null) : null,
+    ...(partial.durationInFrames && template.slots.duration
+      ? { durationInFrames: partial.durationInFrames }
+      : {}),
+  };
+}

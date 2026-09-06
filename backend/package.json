@@ -19,6 +19,7 @@
     "@anthropic-ai/sdk": "^0.71.0",
     "@remotion/bundler": "4.0.409",
     "@remotion/cli": "4.0.409",
+    "@remotion/motion-blur": "^4.0.409",
     "@remotion/renderer": "4.0.409",
     "@supabase/supabase-js": "^2.110.7",
     "bull": "^4.16.5",

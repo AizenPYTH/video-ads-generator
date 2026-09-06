@@ -1,44 +1,39 @@
 import React from "react";
 import { Composition } from "remotion";
-import { DeviceAnimationComposition } from "./DeviceAnimationComposition";
-import { defaultProps } from "./defaultProps";
-import { ASPECT_DIMENSIONS, FPS } from "../../src/utils/constants";
-import type { AspectRatio, VideoCompositionProps } from "../../src/types";
+import { ASPECT_DIMENSIONS, FPS, compositionId } from "./engine/aspect";
+import { placeholderInput } from "./engine/placeholders";
+import { TEMPLATES } from "./templates";
+import type { TemplateInput } from "./engine/types";
 
-export const COMPOSITION_IDS: Record<AspectRatio, string> = {
-  "9:16": "VideoAd-9x16",
-  "16:9": "VideoAd-16x9",
-  "1:1": "VideoAd-1x1",
-};
-
-/** Duration always comes from the storyboard, never from a hardcoded default. */
-const calculateMetadata = ({ props }: { props: VideoCompositionProps }) => ({
-  durationInFrames: Math.max(
-    FPS,
-    Math.round(
-      props.storyboard.scenes.reduce((sum, scene) => sum + scene.duration, 0) *
-        FPS,
-    ),
-  ),
-});
-
+/**
+ * One composition per template per aspect it declares. The gallery, the
+ * editor and the renderer all address compositions by `compositionId`, so
+ * adding a template to the list is the whole registration.
+ */
 export const RemotionRoot: React.FC = () => (
   <>
-    {(Object.keys(COMPOSITION_IDS) as AspectRatio[]).map((ratio) => {
-      const size = ASPECT_DIMENSIONS[ratio];
-      return (
-        <Composition
-          key={ratio}
-          id={COMPOSITION_IDS[ratio]}
-          component={DeviceAnimationComposition}
-          durationInFrames={Math.round(defaultProps.storyboard.totalDuration * FPS)}
-          fps={FPS}
-          width={size.width}
-          height={size.height}
-          defaultProps={defaultProps}
-          calculateMetadata={calculateMetadata}
-        />
-      );
-    })}
+    {TEMPLATES.flatMap((template) =>
+      template.aspects.map((aspect) => {
+        const size = ASPECT_DIMENSIONS[aspect];
+        return (
+          <Composition
+            key={compositionId(template.id, aspect)}
+            id={compositionId(template.id, aspect)}
+            component={template.component}
+            durationInFrames={template.durationInFrames}
+            fps={FPS}
+            width={size.width}
+            height={size.height}
+            defaultProps={placeholderInput(template)}
+            calculateMetadata={({ props }: { props: TemplateInput }) => ({
+              durationInFrames:
+                template.slots.duration && props.durationInFrames
+                  ? Math.max(FPS, Math.round(props.durationInFrames))
+                  : template.durationInFrames,
+            })}
+          />
+        );
+      }),
+    )}
   </>
 );

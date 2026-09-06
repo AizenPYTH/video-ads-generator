@@ -4,3 +4,4 @@ storage
 .env
 *.log
 *.tmp.ts
+.preview/

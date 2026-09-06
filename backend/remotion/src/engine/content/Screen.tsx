@@ -1,0 +1,134 @@
+import React from "react";
+import { Img } from "remotion";
+import type { ImageAsset } from "../types";
+
+/**
+ * A screenshot travels at most this much of the screen height in one hold.
+ * A 12,000px full-page capture scrolled end to end in two seconds is a
+ * blur; a capped travel reads as a hand scrolling the page.
+ */
+const MAX_TRAVEL = 1.15;
+
+export interface ScreenProps {
+  asset: ImageAsset;
+  width: number;
+  height: number;
+  /** 0..1 - how far down the page we have scrolled. */
+  scroll?: number;
+  /** Multiplier on top of the fit. 1 = fitted. */
+  zoom?: number;
+  /** Horizontal offset as a fraction of width (for slides). */
+  shiftX?: number;
+  /** Vertical offset as a fraction of height. */
+  shiftY?: number;
+  opacity?: number;
+  /** Darken toward black, 0..1. */
+  dim?: number;
+  blur?: number;
+  style?: React.CSSProperties;
+}
+
+/**
+ * One screenshot, fitted to a screen.
+ *
+ * A capture taller than the screen (a phone page, a full-page desktop
+ * capture) is fitted to the width and scrolled; one wider than the screen
+ * is fitted to the height and centred, cropping the sides. Either way the
+ * image is never stretched, because a stretched screenshot is the single
+ * fastest way to make a mockup look fake.
+ */
+export const Screen: React.FC<ScreenProps> = ({
+  asset,
+  width,
+  height,
+  scroll = 0,
+  zoom = 1,
+  shiftX = 0,
+  shiftY = 0,
+  opacity = 1,
+  dim = 0,
+  blur = 0,
+  style,
+}) => {
+  const ratio = asset.width > 0 && asset.height > 0 ? asset.height / asset.width : 2;
+  const screenRatio = height / width;
+
+  let renderedWidth: number;
+  let renderedHeight: number;
+  let left = 0;
+  let top = 0;
+
+  if (ratio >= screenRatio) {
+    // Taller than the screen: width-fit, then scroll the overflow.
+    renderedWidth = width;
+    renderedHeight = width * ratio;
+    const overflow = renderedHeight - height;
+    const travel = Math.min(overflow, height * MAX_TRAVEL);
+    top = -travel * scroll;
+  } else {
+    // Wider than the screen: height-fit, crop the sides evenly.
+    renderedHeight = height;
+    renderedWidth = height / ratio;
+    left = (width - renderedWidth) / 2;
+  }
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        overflow: "hidden",
+        opacity,
+        backgroundColor: "#07070a",
+        transform: `translate(${shiftX * width}px, ${shiftY * height}px)`,
+        ...style,
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          transform: `scale(${zoom})`,
+          transformOrigin: "50% 40%",
+          filter: blur > 0 ? `blur(${blur}px)` : undefined,
+        }}
+      >
+        <Img
+          src={asset.url}
+          style={{
+            position: "absolute",
+            left,
+            top,
+            width: renderedWidth,
+            height: renderedHeight,
+            display: "block",
+          }}
+        />
+      </div>
+      {dim > 0 ? (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            backgroundColor: `rgba(0,0,0,${dim})`,
+          }}
+        />
+      ) : null}
+    </div>
+  );
+};
+
+/** Glass: one diagonal sheen. Angle follows the device so it reads as a surface. */
+export const Glass: React.FC<{ angle?: number; strength?: number }> = ({
+  angle = 112,
+  strength = 0.12,
+}) => (
+  <div
+    style={{
+      position: "absolute",
+      inset: 0,
+      pointerEvents: "none",
+      background: `linear-gradient(${angle}deg, rgba(255,255,255,${strength}) 0%, rgba(255,255,255,${strength * 0.35}) 22%, rgba(255,255,255,0) 46%)`,
+    }}
+  />
+);

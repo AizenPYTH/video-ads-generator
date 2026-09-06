@@ -227,7 +227,7 @@ POST /api/generate { templateId, aspects: ["9:16","1:1"], input }
   → validation : le template existe, les formats sont dans template.aspects,
     les slots requis sont remplis
   → job en file
-  → pour chaque format : selectComposition(`${templateId}__${aspect}`)
+  → pour chaque format : selectComposition(`${templateId}--${aspect}`)
                          renderMedia (concurrency, short edge, crf depuis env)
                          remux +faststart
   → poster depuis la première sortie

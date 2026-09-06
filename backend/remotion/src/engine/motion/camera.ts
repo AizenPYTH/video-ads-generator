@@ -1,0 +1,81 @@
+import { track, type TrackKeyframe } from "./keyframes";
+
+/**
+ * A camera, expressed as what it does to the world.
+ *
+ * `dolly` is a distance factor: 1 is rest, 2 is twice as close, 0.5 twice as
+ * far. It is applied as a Z translation against the stage perspective, not
+ * as a scale, so layers at different depths separate as the camera moves -
+ * which is what makes a push-in feel like a camera and not a zoom.
+ *
+ * Orbits are degrees around the stage origin: `orbitY` walks around the
+ * subject (positive = camera moves to the subject's right), `orbitX` looks
+ * down on it (positive = camera above). `x`/`y` truck in stage pixels.
+ */
+export interface CameraState {
+  dolly: number;
+  orbitY: number;
+  orbitX: number;
+  x: number;
+  y: number;
+  roll: number;
+}
+
+export const CAMERA_REST: CameraState = {
+  dolly: 1,
+  orbitY: 0,
+  orbitX: 0,
+  x: 0,
+  y: 0,
+  roll: 0,
+};
+
+export type CameraKeyframe = TrackKeyframe<keyof CameraState>;
+
+export function cameraAt(
+  frame: number,
+  keyframes: readonly CameraKeyframe[],
+): CameraState {
+  return {
+    dolly: track(frame, keyframes, "dolly", CAMERA_REST.dolly),
+    orbitY: track(frame, keyframes, "orbitY", CAMERA_REST.orbitY),
+    orbitX: track(frame, keyframes, "orbitX", CAMERA_REST.orbitX),
+    x: track(frame, keyframes, "x", CAMERA_REST.x),
+    y: track(frame, keyframes, "y", CAMERA_REST.y),
+    roll: track(frame, keyframes, "roll", CAMERA_REST.roll),
+  };
+}
+
+/** Z offset that makes a point at the origin appear `dolly` times closer. */
+export function dollyToZ(dolly: number, perspective: number): number {
+  const factor = Math.max(0.05, dolly);
+  return perspective * (1 - 1 / factor);
+}
+
+/**
+ * The world transform for a camera state. Applied to a `preserve-3d`
+ * container centred on the stage, under a `perspective` of the given size.
+ */
+export function cameraTransform(camera: CameraState, perspective: number): string {
+  const z = dollyToZ(camera.dolly, perspective);
+  return [
+    `translate3d(${camera.x}px, ${camera.y}px, ${z}px)`,
+    // CSS rotateX(+) tips the world's near side up, which reads as a camera
+    // below the subject. Negate so positive orbitX is a camera above.
+    `rotateX(${-camera.orbitX}deg)`,
+    `rotateY(${camera.orbitY}deg)`,
+    `rotateZ(${camera.roll}deg)`,
+  ].join(" ");
+}
+
+/** Adds two states - a keyframed move plus a hand-held drift, typically. */
+export function addCamera(a: CameraState, b: Partial<CameraState>): CameraState {
+  return {
+    dolly: a.dolly * (b.dolly ?? 1),
+    orbitY: a.orbitY + (b.orbitY ?? 0),
+    orbitX: a.orbitX + (b.orbitX ?? 0),
+    x: a.x + (b.x ?? 0),
+    y: a.y + (b.y ?? 0),
+    roll: a.roll + (b.roll ?? 0),
+  };
+}

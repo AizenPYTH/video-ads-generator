@@ -1,0 +1,168 @@
+import React from "react";
+import { Placed } from "../scene/Stage";
+import { MONITOR } from "./specs";
+import { Glass } from "../content/Screen";
+
+export interface MonitorGeometry {
+  width: number;
+  bezel: number;
+  screenWidth: number;
+  screenHeight: number;
+  panelHeight: number;
+  thickness: number;
+  radius: number;
+  neckWidth: number;
+  neckHeight: number;
+  footWidth: number;
+  footDepth: number;
+  footThickness: number;
+  /** Total height from panel top to the floor. */
+  totalHeight: number;
+}
+
+export function monitorGeometry(width: number): MonitorGeometry {
+  const bezel = width * MONITOR.bezel;
+  const screenWidth = width - bezel * 2;
+  const screenHeight = screenWidth / MONITOR.screenAspect;
+  const panelHeight = screenHeight + bezel * 2;
+  const neckHeight = width * MONITOR.neck.height;
+  const footThickness = width * MONITOR.foot.thickness;
+  return {
+    width,
+    bezel,
+    screenWidth,
+    screenHeight,
+    panelHeight,
+    thickness: width * MONITOR.thickness,
+    radius: width * MONITOR.cornerRadius,
+    neckWidth: width * MONITOR.neck.width,
+    neckHeight,
+    footWidth: width * MONITOR.foot.width,
+    footDepth: width * MONITOR.foot.depth,
+    footThickness,
+    totalHeight: panelHeight + neckHeight + footThickness,
+  };
+}
+
+const ALUMINIUM =
+  "linear-gradient(168deg, #dcdde2 0%, #b9bbc3 34%, #979aa3 68%, #cfd1d7 100%)";
+const ALUMINIUM_DARK = "linear-gradient(180deg, #8d9099 0%, #6f727a 100%)";
+
+/**
+ * A desk monitor with its stand.
+ *
+ * Origin is the centre of the screen; +z toward the camera. The stand
+ * drops behind the panel to a foot that lies flat on the floor, so the
+ * floor level is `panelHeight / 2 + neckHeight` below the origin - useful
+ * for placing a contact shadow.
+ */
+export const Monitor: React.FC<{
+  width: number;
+  screen: (dims: { width: number; height: number }) => React.ReactNode;
+  brightness?: number;
+  sheenAngle?: number;
+  transform?: string;
+}> = ({ width, screen, brightness = 1, sheenAngle = 108, transform }) => {
+  const g = monitorGeometry(width);
+  const floorY = g.panelHeight / 2 + g.neckHeight;
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        width: 0,
+        height: 0,
+        transformStyle: "preserve-3d",
+        transform: transform ?? "none",
+      }}
+    >
+      {/* Foot, flat on the floor. The panel sits over its back third, so
+          most of it reaches forward where a camera above can see it. */}
+      <Placed x={0} y={floorY} z={g.footDepth * 0.18} rotateX={90} width={g.footWidth} height={g.footDepth}>
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: g.radius * 1.5,
+            background: ALUMINIUM,
+            boxShadow: "0 0 24px rgba(0,0,0,0.5)",
+          }}
+        />
+      </Placed>
+      {/* Neck */}
+      <Placed x={0} y={g.panelHeight / 2 + g.neckHeight / 2} z={-g.thickness - g.neckWidth * 0.2} width={g.neckWidth} height={g.neckHeight}>
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background: ALUMINIUM,
+            borderRadius: `0 0 ${g.radius * 0.6}px ${g.radius * 0.6}px`,
+          }}
+        />
+      </Placed>
+
+      {/* Panel back and edges */}
+      <Placed x={0} y={0} z={-g.thickness} rotateY={180} width={g.width} height={g.panelHeight}>
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            backfaceVisibility: "hidden",
+            borderRadius: g.radius,
+            background: ALUMINIUM,
+          }}
+        />
+      </Placed>
+      {[
+        { x: 0, y: -g.panelHeight / 2, rx: 90, ry: 0, w: g.width, h: g.thickness },
+        { x: 0, y: g.panelHeight / 2, rx: 90, ry: 0, w: g.width, h: g.thickness },
+        { x: -g.width / 2, y: 0, rx: 0, ry: 90, w: g.thickness, h: g.panelHeight },
+        { x: g.width / 2, y: 0, rx: 0, ry: 90, w: g.thickness, h: g.panelHeight },
+      ].map((edge, index) => (
+        <Placed
+          key={index}
+          x={edge.x}
+          y={edge.y}
+          z={-g.thickness / 2}
+          rotateX={edge.rx}
+          rotateY={edge.ry}
+          width={edge.w}
+          height={edge.h}
+        >
+          <div style={{ position: "absolute", inset: 0, background: ALUMINIUM_DARK }} />
+        </Placed>
+      ))}
+
+      {/* Panel front */}
+      <Placed x={0} y={0} z={0} width={g.width} height={g.panelHeight}>
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            backfaceVisibility: "hidden",
+            borderRadius: g.radius,
+            background: "linear-gradient(160deg, #2a2a30 0%, #121215 26%, #0a0a0d 74%, #202025 100%)",
+            boxSizing: "border-box",
+            padding: g.bezel,
+          }}
+        >
+          <div
+            style={{
+              position: "relative",
+              width: g.screenWidth,
+              height: g.screenHeight,
+              borderRadius: g.radius * 0.5,
+              overflow: "hidden",
+              background: "#000",
+            }}
+          >
+            <div style={{ position: "absolute", inset: 0, opacity: brightness }}>
+              {screen({ width: g.screenWidth, height: g.screenHeight })}
+            </div>
+            <Glass angle={sheenAngle} strength={0.09} />
+          </div>
+        </div>
+      </Placed>
+    </div>
+  );
+};

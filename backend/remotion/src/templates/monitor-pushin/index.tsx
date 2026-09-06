@@ -1,0 +1,142 @@
+import React from "react";
+import { AbsoluteFill, useCurrentFrame, useVideoConfig } from "remotion";
+import { Environment } from "../../engine/scene/Environment";
+import { Stage, Placed } from "../../engine/scene/Stage";
+import { ContactShadow, ScreenSpill, Surface } from "../../engine/scene/Floor";
+import { BoxAt } from "../../engine/scene/Overlay";
+import { Monitor, monitorGeometry } from "../../engine/devices/Monitor";
+import { ScreenSequence } from "../../engine/content/ScreenSequence";
+import { Headline, Subline } from "../../engine/content/Copy";
+import { Logo } from "../../engine/content/Logo";
+import { EndCard } from "../../engine/content/EndCard";
+import { addCamera, cameraAt } from "../../engine/motion/camera";
+import { kf } from "../../engine/motion/keyframes";
+import { drift, DRIFT_PERIODS, ease, progress } from "../../engine/motion/easing";
+import { layoutFor } from "../../engine/layout";
+import { darken, rgba } from "../../engine/palette";
+import type { TemplateDefinition, TemplateInput } from "../../engine/types";
+
+const DURATION = 300;
+
+const T = {
+  wake: 14,
+  headline: 48,
+  pushEnd: 236,
+  copyLeave: 240,
+  endCard: 256,
+};
+
+/**
+ * A display on a desk in a dark room. No reveal - it is simply there - and
+ * the whole piece is one slow push toward the screen, the camera easing
+ * off-axis to straight-on as it goes, the desk sliding underneath. The
+ * kind of shot that is all patience.
+ */
+const Component: React.FC<TemplateInput> = ({ screens, logo, brand, copy, cta }) => {
+  const frame = useCurrentFrame();
+  const { width, height, fps } = useVideoConfig();
+  const L = layoutFor(width, height);
+  const t = frame / fps;
+
+  const wide = L.aspect === "16:9";
+  const monitorWidth = Math.min(L.device.width * (wide ? 0.78 : 0.8), L.device.height * (wide ? 1.2 : 1.0));
+  const g = monitorGeometry(monitorWidth);
+  const centreX = L.device.x + L.device.width / 2 - width / 2;
+  const centreY = L.device.y + L.device.height * (wide ? 0.44 : 0.4) - height / 2;
+  const floorY = g.panelHeight / 2 + g.neckHeight;
+
+  const brightness = kf(frame, [
+    { at: 0, value: 0 },
+    { at: T.wake + 18, value: 1, easing: ease.cinematicOut },
+  ]);
+
+  const move = cameraAt(frame, [
+    { at: 0, dolly: 0.74, orbitY: 14, orbitX: 12, y: L.unit * 0.02 },
+    { at: T.pushEnd, dolly: wide ? 1.28 : 1.14, orbitY: 2, orbitX: 5, y: 0, easing: ease.smooth },
+    { at: T.endCard + 20, dolly: wide ? 1.3 : 1.16, orbitY: 1, easing: ease.smooth },
+  ]);
+  const camera = addCamera(move, {
+    orbitY: drift(t, DRIFT_PERIODS.slow, 0.4),
+    orbitX: drift(t, DRIFT_PERIODS.medium, 0.25, 2),
+  });
+
+  const exposure = ease.cinematicOut(progress(frame, 0, 26));
+  const endDim = ease.cinematicIn(progress(frame, T.endCard, T.endCard + 20));
+
+  return (
+    <AbsoluteFill style={{ backgroundColor: "#000" }}>
+      <Environment
+        primary={brand.primary}
+        accent={brand.accent}
+        exposure={exposure * (1 - endDim * 0.6)}
+        keyLight={{ x: 0.7, y: 0.2 }}
+        dust
+      />
+
+      <Stage camera={camera} origin={{ x: 0.5, y: 0.42 }}>
+        <Placed x={centreX} y={centreY} width={0} height={0}>
+          <Surface y={floorY} size={L.unit * 14} color={darken(brand.primary, 0.6)} focus={0.46} opacity={exposure} />
+          <ContactShadow width={g.footWidth * 2.4} depth={g.footDepth * 2.2} y={floorY - 1} z={-g.thickness} strength={0.75} softness={36} />
+          <ScreenSpill width={g.width} depth={g.width * 0.6} y={floorY - 1} z={g.width * 0.22} color={rgba(brand.accent, 0.45)} intensity={brightness * 0.6} />
+          <Monitor
+            width={monitorWidth}
+            brightness={brightness}
+            sheenAngle={104 + camera.orbitY * 1.5}
+            screen={(dims) => (
+              <ScreenSequence
+                screens={screens}
+                width={dims.width}
+                height={dims.height}
+                from={T.wake}
+                to={T.endCard + 10}
+                hold={Math.round(fps * 2.1)}
+                transition="zoom"
+                transitionFrames={16}
+                scrollAmount={0.7}
+                driftZoom={1.025}
+                dim={endDim * 0.7}
+              />
+            )}
+          />
+        </Placed>
+      </Stage>
+
+      <BoxAt box={L.copy} align={L.align === "left" ? "flex-start" : "center"} justify={wide ? "center" : "flex-start"}>
+        {copy.headline ? (
+          <Headline text={copy.headline} size={L.headlineSize} from={T.headline} leave={T.copyLeave} align={L.align} glow={rgba(brand.accent, 0.25)} />
+        ) : null}
+        {copy.subline ? (
+          <Subline text={copy.subline} size={L.sublineSize} from={T.headline + 10} leave={T.copyLeave} align={L.align} style={{ marginTop: L.unit * 0.02 }} />
+        ) : null}
+      </BoxAt>
+
+      {logo ? (
+        <BoxAt box={L.signature} align={L.align === "left" ? "flex-start" : "center"}>
+          <Logo asset={logo} width={L.signature.width} height={L.signature.height} reveal="rise" progress={progress(frame, 20, 44) * (1 - ease.cinematicIn(progress(frame, T.endCard - 6, T.endCard + 8)))} />
+        </BoxAt>
+      ) : null}
+
+      <EndCard from={T.endCard} cta={cta} brand={brand} logo={logo} />
+    </AbsoluteFill>
+  );
+};
+
+export const template: TemplateDefinition = {
+  id: "monitor-pushin",
+  name: "Desktop — Slow Push-in",
+  tagline: "A display on a desk, one patient camera push from off-axis to straight-on.",
+  category: "desktop",
+  devices: ["monitor"],
+  durationInFrames: DURATION,
+  aspects: ["16:9", "1:1", "9:16"],
+  slots: {
+    screens: { min: 1, max: 4, surface: "desktop" },
+    logo: "optional",
+    headline: true,
+    subline: true,
+    cta: true,
+    accent: true,
+    duration: null,
+  },
+  component: Component,
+};

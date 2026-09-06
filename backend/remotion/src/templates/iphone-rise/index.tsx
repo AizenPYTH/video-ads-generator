@@ -1,0 +1,203 @@
+import React from "react";
+import { AbsoluteFill, useCurrentFrame, useVideoConfig } from "remotion";
+import { Environment } from "../../engine/scene/Environment";
+import { Stage, Placed } from "../../engine/scene/Stage";
+import { BoxAt } from "../../engine/scene/Overlay";
+import { IPhone, iphoneGeometry } from "../../engine/devices/IPhone";
+import { ScreenSequence } from "../../engine/content/ScreenSequence";
+import { Headline, Subline } from "../../engine/content/Copy";
+import { Logo } from "../../engine/content/Logo";
+import { EndCard } from "../../engine/content/EndCard";
+import { addCamera, cameraAt } from "../../engine/motion/camera";
+import { kf } from "../../engine/motion/keyframes";
+import { drift, DRIFT_PERIODS, ease, progress } from "../../engine/motion/easing";
+import { layoutFor } from "../../engine/layout";
+import { rgba } from "../../engine/palette";
+import type { TemplateDefinition, TemplateInput } from "../../engine/types";
+
+const DURATION = 300;
+
+const T = {
+  riseEnd: 78,
+  turnStart: 12,
+  turnEnd: 92,
+  headline: 84,
+  floatStart: 100,
+  faceStart: 222,
+  faceEnd: 252,
+  copyLeave: 240,
+  endCard: 256,
+};
+
+/**
+ * The phone rises into frame from below, back to camera, and turns to face
+ * us on the way up - a half spin that shows the body has a back and a
+ * thickness. It settles into a three-quarter pose and floats there while
+ * the app's screens slide through, then squares up to the camera for the
+ * store card.
+ */
+const Component: React.FC<TemplateInput> = ({ screens, logo, brand, copy, cta }) => {
+  const frame = useCurrentFrame();
+  const { width, height, fps } = useVideoConfig();
+  const L = layoutFor(width, height);
+  const t = frame / fps;
+
+  const wide = L.aspect === "16:9";
+  const phoneWidth = Math.min(L.device.height * 0.44, L.device.width * (wide ? 0.42 : 0.5));
+  const g = iphoneGeometry(phoneWidth);
+  const centreX = L.device.x + L.device.width / 2 - width / 2;
+  const centreY = L.device.y + L.device.height / 2 - height / 2;
+
+  // The rise: from well below the frame to its resting height, overshooting
+  // a touch, like something lifted and set down in the air.
+  const riseY = kf(frame, [
+    { at: 0, value: L.height * 0.75 },
+    { at: T.riseEnd, value: 0, easing: ease.settle },
+  ]);
+
+  // The half turn, back to front, on a curve that lingers on the edge.
+  const yaw = kf(frame, [
+    { at: T.turnStart, value: 180 },
+    { at: T.turnEnd, value: -16, easing: ease.cinematicInOut },
+    { at: T.floatStart, value: -18, easing: ease.smooth },
+    { at: T.faceStart, value: -18 },
+    { at: T.faceEnd, value: 0, easing: ease.cinematicInOut },
+  ]);
+  const pitch = kf(frame, [
+    { at: T.turnStart, value: -14 },
+    { at: T.turnEnd, value: 5, easing: ease.cinematicInOut },
+    { at: T.faceStart, value: 5 },
+    { at: T.faceEnd, value: 0, easing: ease.cinematicInOut },
+  ]);
+  // Idle float once it has settled.
+  const settled = ease.cinematicOut(progress(frame, T.turnEnd, T.floatStart + 20));
+  const facing = ease.cinematicInOut(progress(frame, T.faceStart, T.faceEnd));
+  const idle = settled * (1 - facing);
+  const floatYaw = drift(t, DRIFT_PERIODS.medium, 6, 1) * idle;
+  const floatPitch = drift(t, DRIFT_PERIODS.slow, 3, 4) * idle;
+  const floatY = drift(t, DRIFT_PERIODS.breath, L.unit * 0.012, 2) * idle;
+
+  // Screen wakes as the front comes round.
+  const brightness = kf(frame, [
+    { at: T.turnStart + 40, value: 0 },
+    { at: T.turnEnd - 4, value: 1, easing: ease.cinematicOut },
+  ]);
+
+  const move = cameraAt(frame, [
+    { at: 0, dolly: 0.92, orbitY: 6, orbitX: 4 },
+    { at: T.riseEnd + 10, dolly: 1, orbitY: 0, orbitX: 2, easing: ease.cinematicOut },
+    { at: T.floatStart, dolly: 1 },
+    { at: T.faceStart, dolly: 1.1, easing: ease.smooth },
+    { at: T.faceEnd, dolly: 1.02, orbitX: 0, easing: ease.cinematicInOut },
+  ]);
+  const camera = addCamera(move, {
+    orbitY: drift(t, DRIFT_PERIODS.slow, 0.5),
+    x: drift(t, DRIFT_PERIODS.fast, L.unit * 0.002, 3),
+  });
+
+  const exposure = ease.cinematicOut(progress(frame, 0, 20));
+  const endDim = ease.cinematicIn(progress(frame, T.endCard, T.endCard + 20));
+
+  // Sheen angle follows the yaw so the glass reads as a surface turning.
+  const totalYaw = yaw + floatYaw;
+
+  return (
+    <AbsoluteFill style={{ backgroundColor: "#000" }}>
+      <Environment
+        primary={brand.primary}
+        accent={brand.accent}
+        exposure={exposure * (1 - endDim * 0.6)}
+        keyLight={{ x: 0.3, y: 0.25 }}
+        dust
+      />
+
+      <Stage camera={camera} origin={{ x: 0.5, y: 0.5 }}>
+        <Placed x={centreX} y={centreY + riseY + floatY} width={0} height={0}>
+          {/* Floating shadow, well behind and below: what says "not on a table". */}
+          <Placed x={0} y={g.height * 0.55} z={-g.width * 1.2} width={g.width * 1.6} height={g.height * 0.5}>
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                borderRadius: "50%",
+                background: "radial-gradient(ellipse at center, rgba(0,0,0,0.7) 0%, transparent 65%)",
+                filter: "blur(40px)",
+                opacity: settled,
+              }}
+            />
+          </Placed>
+          {/* Rim glow that the accent light throws on the body. */}
+          <Placed x={0} y={0} z={-g.width * 0.6} width={g.width * 2.2} height={g.height * 1.4}>
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                borderRadius: "50%",
+                background: `radial-gradient(ellipse at center, ${rgba(brand.accent, 0.35)} 0%, transparent 60%)`,
+                filter: "blur(50px)",
+                opacity: brightness * 0.8,
+              }}
+            />
+          </Placed>
+          <IPhone
+            width={phoneWidth}
+            brightness={brightness}
+            sheenAngle={112 + totalYaw * 0.9}
+            transform={`rotateY(${totalYaw}deg) rotateX(${pitch + floatPitch}deg)`}
+            screen={(dims) => (
+              <ScreenSequence
+                screens={screens}
+                width={dims.width}
+                height={dims.height}
+                from={T.turnEnd - 10}
+                to={T.endCard + 10}
+                hold={Math.round(fps * 1.7)}
+                transition="slide-up"
+                transitionFrames={12}
+                scrollAmount={0.6}
+                dim={endDim * 0.7}
+              />
+            )}
+          />
+        </Placed>
+      </Stage>
+
+      <BoxAt box={L.copy} align={L.align === "left" ? "flex-start" : "center"} justify={wide ? "center" : "flex-start"}>
+        {copy.headline ? (
+          <Headline text={copy.headline} size={L.headlineSize} from={T.headline} leave={T.copyLeave} align={L.align} glow={rgba(brand.accent, 0.25)} />
+        ) : null}
+        {copy.subline ? (
+          <Subline text={copy.subline} size={L.sublineSize} from={T.headline + 10} leave={T.copyLeave} align={L.align} style={{ marginTop: L.unit * 0.02 }} />
+        ) : null}
+      </BoxAt>
+
+      {logo ? (
+        <BoxAt box={L.signature} align={L.align === "left" ? "flex-start" : "center"}>
+          <Logo asset={logo} width={L.signature.width} height={L.signature.height} reveal="rise" progress={progress(frame, 30, 54) * (1 - ease.cinematicIn(progress(frame, T.endCard - 6, T.endCard + 8)))} />
+        </BoxAt>
+      ) : null}
+
+      <EndCard from={T.endCard} cta={cta} brand={brand} logo={logo} badges="both" />
+    </AbsoluteFill>
+  );
+};
+
+export const template: TemplateDefinition = {
+  id: "iphone-rise",
+  name: "iPhone — Rise & Turn",
+  tagline: "Rises from below, back to camera, and turns to face you. Ends on the store card.",
+  category: "phone",
+  devices: ["iphone"],
+  durationInFrames: DURATION,
+  aspects: ["9:16", "1:1", "16:9"],
+  slots: {
+    screens: { min: 1, max: 5, surface: "mobile" },
+    logo: "optional",
+    headline: true,
+    subline: true,
+    cta: true,
+    accent: true,
+    duration: null,
+  },
+  component: Component,
+};
