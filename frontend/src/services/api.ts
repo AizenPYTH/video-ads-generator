@@ -1,17 +1,15 @@
 import type {
   AnalysisResponse,
   ApiResponse,
-  GenerationResponse,
-  ProductAnalysis,
-  StatusResponse,
   AppStoreMatch,
-  ProductMetadata,
-  Storyboard,
-  StoryboardsResponse,
+  AspectRatio,
+  GeneratePayload,
+  GenerationResponse,
+  ImageAsset,
+  StatusResponse,
   UploadResponse,
-  VideoStyle,
-  DeviceType,
 } from "@/types";
+import type { TemplateSummary } from "@/video/engine/registry";
 
 /** Empty in dev: Vite proxies /api and /media to the backend. */
 const BASE_URL = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
@@ -41,10 +39,7 @@ async function request<T>(
     });
   } catch (error) {
     if ((error as Error).name === "AbortError") throw error;
-    throw new ApiError(
-      "Could not reach the server. Is the backend running?",
-      0,
-    );
+    throw new ApiError("Could not reach the server. Is the backend running?", 0);
   }
 
   let body: ApiResponse<T> | null;
@@ -64,65 +59,59 @@ async function request<T>(
   return body.data as T;
 }
 
+const withSignal = (signal?: AbortSignal) => (signal ? { signal } : {});
+
 export const api = {
+  /** The library the backend can render. The gallery uses the local mirror. */
+  templates: (signal?: AbortSignal) =>
+    request<{ templates: TemplateSummary[] }>("/templates", { method: "GET", ...withSignal(signal) }),
+
+  /** A website or an App Store link - the backend tells them apart. */
   uploadUrl: (url: string, signal?: AbortSignal) =>
     request<UploadResponse>("/upload", {
       method: "POST",
       body: JSON.stringify({ url }),
-      ...(signal ? { signal } : {}),
+      ...withSignal(signal),
     }),
 
   uploadScreenshots: (screenshots: string[], signal?: AbortSignal) =>
     request<UploadResponse>("/upload", {
       method: "POST",
       body: JSON.stringify({ screenshots }),
-      ...(signal ? { signal } : {}),
+      ...withSignal(signal),
     }),
 
+  uploadLogo: (logo: string, signal?: AbortSignal) =>
+    request<{ logo: ImageAsset }>("/upload/logo", {
+      method: "POST",
+      body: JSON.stringify({ logo }),
+      ...withSignal(signal),
+    }),
+
+  /** Optional enrichment: brand name and palette from the captured page. */
   analyze: (uploadId: string, signal?: AbortSignal) =>
     request<AnalysisResponse>("/analyze", {
       method: "POST",
       body: JSON.stringify({ uploadId }),
-      ...(signal ? { signal } : {}),
+      ...withSignal(signal),
     }),
 
-  storyboards: (
-    analysis: ProductAnalysis,
-    style: VideoStyle,
-    device: DeviceType,
-    signal?: AbortSignal,
-  ) =>
-    request<StoryboardsResponse>("/storyboards", {
-      method: "POST",
-      body: JSON.stringify({ analysis, style, device }),
-      ...(signal ? { signal } : {}),
+  /** App Store lookup, proxied by the API so it is not a CORS problem. */
+  appStore: (term: string, signal?: AbortSignal) =>
+    request<{ matches: AppStoreMatch[] }>(`/appstore?term=${encodeURIComponent(term)}`, {
+      method: "GET",
+      ...withSignal(signal),
     }),
 
-  generate: (payload: {
-    storyboard: Storyboard;
-    style: VideoStyle;
-    device: DeviceType;
-    analysis: ProductAnalysis;
-    metadata?: ProductMetadata;
-  }) =>
+  generate: (payload: GeneratePayload) =>
     request<GenerationResponse>("/generate", {
       method: "POST",
       body: JSON.stringify(payload),
     }),
 
-  /** App Store lookup, proxied by the API so it is not a CORS problem. */
-  appStore: (term: string, signal?: AbortSignal) =>
-    request<{ matches: AppStoreMatch[] }>(
-      `/appstore?term=${encodeURIComponent(term)}`,
-      { method: "GET", ...(signal ? { signal } : {}) },
-    ),
-
   status: (jobId: string, signal?: AbortSignal) =>
-    request<StatusResponse>(`/video/${jobId}/status`, {
-      method: "GET",
-      ...(signal ? { signal } : {}),
-    }),
+    request<StatusResponse>(`/video/${jobId}/status`, { method: "GET", ...withSignal(signal) }),
 
-  downloadUrl: (jobId: string, format: "9x16" | "16x9" | "1x1"): string =>
-    `${BASE_URL}/api/video/${jobId}/download/${format}`,
+  downloadUrl: (jobId: string, aspect: AspectRatio): string =>
+    `${BASE_URL}/api/video/${jobId}/download/${aspect.replace(":", "x")}`,
 };

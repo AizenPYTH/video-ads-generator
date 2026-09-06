@@ -38,7 +38,7 @@ export const ACCEPTED_IMAGE_TYPES = {
 } as const;
 
 export const MAX_FILE_BYTES = 8 * 1024 * 1024;
-export const MAX_FILES = 5;
+export const MAX_FILES = 8;
 
 export function fileToDataUri(file: File): Promise<string> {
   return new Promise((resolve, reject) => {

@@ -1,13 +1,15 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { Layout } from "@/components/Layout/Layout";
-import StudioPage from "@/pages/StudioPage";
+import GalleryPage from "@/pages/GalleryPage";
+import EditorPage from "@/pages/EditorPage";
 
-/** One screen. Everything happens on it. */
+/** The library, and one template at a time. */
 export default function App() {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route index element={<StudioPage />} />
+        <Route index element={<GalleryPage />} />
+        <Route path="/t/:templateId" element={<EditorPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

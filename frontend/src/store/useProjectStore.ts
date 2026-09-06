@@ -1,87 +1,91 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type {
-  DeviceType,
-  ProductAnalysis,
-  ProductMetadata,
-  Storyboard,
-  VideoStyle,
-} from "@/types";
+import type { AspectRatio, AssetRef, ImageAsset, ProductLinks } from "@/types";
 
 /**
- * One run: a link goes in, a video comes out. Everything here is derived
- * automatically unless the user opens the options panel and overrides it -
- * `styleTouched` / `deviceTouched` record that so a fresh analysis never
- * silently undoes a deliberate choice.
+ * One project: a template, and what the user has put in it.
+ *
+ * Everything the live preview reads lives here, so a change to any field
+ * re-renders the Player without a round trip. Session-scoped: captures
+ * expire server side, so a week-old restore would only produce 404s.
  */
-interface ProjectState {
+export interface ProjectState {
+  templateId: string | null;
+  aspects: AspectRatio[];
+
+  /** Where the screens came from, for the label under the source field. */
   sourceLabel: string | null;
-  analysis: ProductAnalysis | null;
-  storyboards: Storyboard[];
-  storyboardId: string | null;
-  style: VideoStyle;
-  device: DeviceType;
-  styleTouched: boolean;
-  deviceTouched: boolean;
-  /** Links the ad closes on. `productUrl` is seeded from the captured page. */
-  metadata: ProductMetadata;
+  uploadId: string | null;
+  /** Every capture available, in capture order. */
+  assets: AssetRef[];
+  /** The ids of the ones in the template, in the order the user chose. */
+  screenIds: string[];
+
+  logo: ImageAsset | null;
+  brandName: string;
+  primary: string;
+  accent: string;
+  headline: string;
+  subline: string;
+  links: ProductLinks;
+
   jobId: string | null;
 
-  setSourceLabel: (label: string | null) => void;
-  setAnalysis: (analysis: ProductAnalysis | null) => void;
-  setStoryboards: (storyboards: Storyboard[]) => void;
-  setStoryboardId: (id: string | null) => void;
-  setStyle: (style: VideoStyle, touched?: boolean) => void;
-  setDevice: (device: DeviceType, touched?: boolean) => void;
-  setMetadata: (patch: Partial<ProductMetadata>) => void;
+  setTemplate: (templateId: string, aspects: AspectRatio[]) => void;
+  setAspects: (aspects: AspectRatio[]) => void;
+  setSource: (input: { label: string; uploadId: string; assets: AssetRef[]; screenIds: string[] }) => void;
+  setScreenIds: (ids: string[]) => void;
+  setLogo: (logo: ImageAsset | null) => void;
+  setBrand: (patch: Partial<Pick<ProjectState, "brandName" | "primary" | "accent">>) => void;
+  setCopy: (patch: Partial<Pick<ProjectState, "headline" | "subline">>) => void;
+  setLinks: (patch: Partial<ProductLinks>) => void;
   setJobId: (jobId: string | null) => void;
+  /** Clears the content, keeps the template. */
+  clearContent: () => void;
   reset: () => void;
 }
 
-const initial = {
+const content = {
   sourceLabel: null,
-  analysis: null,
-  storyboards: [] as Storyboard[],
-  storyboardId: null,
-  style: "apple_premium" as VideoStyle,
-  device: "iphone_15_pro" as DeviceType,
-  styleTouched: false,
-  deviceTouched: false,
-  metadata: {} as ProductMetadata,
+  uploadId: null,
+  assets: [] as AssetRef[],
+  screenIds: [] as string[],
+  logo: null,
+  brandName: "",
+  primary: "#5b6cff",
+  accent: "#22d3ee",
+  headline: "",
+  subline: "",
+  links: {} as ProductLinks,
   jobId: null,
+};
+
+const initial = {
+  templateId: null,
+  aspects: ["9:16"] as AspectRatio[],
+  ...content,
 };
 
 export const useProjectStore = create<ProjectState>()(
   persist(
     (set) => ({
       ...initial,
-      setSourceLabel: (sourceLabel) => set({ sourceLabel }),
-      setAnalysis: (analysis) => set({ analysis }),
-      setStoryboards: (storyboards) => set({ storyboards }),
-      setStoryboardId: (storyboardId) => set({ storyboardId }),
-      setStyle: (style, touched = true) =>
-        set({ style, ...(touched ? { styleTouched: true } : {}) }),
-      setDevice: (device, touched = true) =>
-        set({ device, ...(touched ? { deviceTouched: true } : {}) }),
-      setMetadata: (patch) =>
-        set((state) => ({ metadata: { ...state.metadata, ...patch } })),
+      setTemplate: (templateId, aspects) => set({ templateId, aspects, jobId: null }),
+      setAspects: (aspects) => set({ aspects }),
+      setSource: ({ label, uploadId, assets, screenIds }) =>
+        set({ sourceLabel: label, uploadId, assets, screenIds, jobId: null }),
+      setScreenIds: (screenIds) => set({ screenIds, jobId: null }),
+      setLogo: (logo) => set({ logo, jobId: null }),
+      setBrand: (patch) => set({ ...patch, jobId: null }),
+      setCopy: (patch) => set({ ...patch, jobId: null }),
+      setLinks: (patch) => set((state) => ({ links: { ...state.links, ...patch }, jobId: null })),
       setJobId: (jobId) => set({ jobId }),
+      clearContent: () => set({ ...content }),
       reset: () => set({ ...initial }),
     }),
     {
-      name: "reel-project",
-      // Session-scoped: captures expire server side, so a week-old restore
-      // would only produce confusing 404s.
+      name: "reel-project-v2",
       storage: createJSONStorage(() => sessionStorage),
     },
   ),
 );
-
-export function useSelectedStoryboard(): Storyboard | null {
-  return useProjectStore(
-    (state) =>
-      state.storyboards.find(
-        (storyboard) => storyboard.id === state.storyboardId,
-      ) ?? null,
-  );
-}

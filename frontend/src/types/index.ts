@@ -67,14 +67,16 @@ export interface ProductAnalysis {
 
 /** A capture the video can display. `id` is what storyboards reference. */
 export interface AssetRef {
-  /** e.g. "screenshot_main", "screenshot_1", "screenshot_2" */
+  /** e.g. "screenshot_main", "screenshot_1", "screenshot_desktop_2" */
   id: string;
   /** Absolute URL served by the backend, loadable by headless Chrome. */
   url: string;
   width: number;
   height: number;
-  /** Human label used in Claude prompts so it picks meaningful shots. */
+  /** Human label; also used in Claude prompts so it picks meaningful shots. */
   label: string;
+  /** Which viewport it was captured on. Uploads are guessed from the ratio. */
+  surface?: "mobile" | "desktop";
 }
 
 // ====== STORYBOARD ======
@@ -210,17 +212,28 @@ export interface Storyboard {
   scenes: Scene[];
 }
 
-// ====== LINKS SHOWN AT THE END OF THE AD ======
+// ====== VIDEO TEMPLATES ======
 
-/**
- * Where the viewer should go next. Every field is optional: with none of
- * them the ad still closes on the page we captured.
- */
-export interface ProductMetadata {
+export type {
+  AspectRatio,
+  Brand,
+  CallToAction,
+  Copy,
+  DeviceKind,
+  ImageAsset,
+  ScreenSurface,
+  SlotSpec,
+  TemplateCategory,
+  TemplateDefinition,
+  TemplateInput,
+} from "@/video/engine/types";
+import type { AspectRatio, ImageAsset } from "@/video/engine/types";
+
+/** Links the ad closes on. All optional; the outro falls back to the captured page. */
+export interface ProductLinks {
   productUrl?: string;
   appStoreUrl?: string;
   googlePlayUrl?: string;
-  appName?: string;
 }
 
 /** One App Store search hit, from `GET /api/appstore`. */
@@ -233,14 +246,19 @@ export interface AppStoreMatch {
 
 // ====== VIDEO GENERATION ======
 
-export type AspectRatio = "9:16" | "16:9" | "1:1";
-
-export interface GenerationRequest {
-  storyboard: Storyboard;
-  style: VideoStyle;
-  device: DeviceType;
-  productAnalysis: ProductAnalysis;
-  metadata?: ProductMetadata;
+/** What `POST /api/generate` takes. */
+export interface GeneratePayload {
+  templateId: string;
+  aspects: AspectRatio[];
+  input: {
+    screens: ImageAsset[];
+    logo: ImageAsset | null;
+    brand: { name?: string; primary?: string; accent?: string };
+    copy: { headline?: string; subline?: string };
+    links: ProductLinks | null;
+    durationSeconds?: number;
+  };
+  productName?: string;
 }
 
 export type JobStatus =
@@ -251,26 +269,8 @@ export type JobStatus =
   | "completed"
   | "failed";
 
-export interface VideoOutputs {
-  ratio_9_16: string;
-  ratio_16_9: string;
-  ratio_1_1: string;
-}
-
-export interface VideoJob {
-  id: string;
-  status: JobStatus;
-  progress: number;
-  message: string;
-  request: GenerationRequest;
-  outputs?: VideoOutputs;
-  poster?: string;
-  error?: string;
-  createdAt: string;
-  startedAt?: string;
-  completedAt?: string;
-  estimatedTimeRemaining?: number;
-}
+/** Public URLs keyed by aspect. Only the requested ones are present. */
+export type VideoOutputs = Partial<Record<AspectRatio, string>>;
 
 // ====== API ENVELOPES ======
 
@@ -283,11 +283,15 @@ export interface ApiResponse<T> {
 
 export interface UploadResponse {
   uploadId: string;
-  fileType: "url" | "screenshot";
+  fileType: "url" | "screenshot" | "appstore";
   sourceUrl?: string;
   /** Absolute URL of the primary capture, for the client-side preview. */
   previewUrl: string;
   assets: AssetRef[];
+  /** Uploaded logo, or the app icon when the source was a store listing. */
+  logo?: ImageAsset;
+  /** Store listing details when the source was an App Store URL. */
+  app?: { name: string; publisher: string; appStoreUrl: string };
   pageTitle?: string;
   timestamp: string;
 }
