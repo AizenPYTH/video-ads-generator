@@ -1,0 +1,94 @@
+import React from "react";
+import { AbsoluteFill, useCurrentFrame, useVideoConfig } from "remotion";
+import { Environment } from "../../engine/scene/Environment";
+import { Stage, Placed } from "../../engine/scene/Stage";
+import { ContactShadow, Surface } from "../../engine/scene/Floor";
+import { IPhone, iphoneGeometry } from "../../engine/devices/IPhone";
+import { ScreenSequence } from "../../engine/content/ScreenSequence";
+import { EndCard } from "../../engine/content/EndCard";
+import { addCamera, cameraAt } from "../../engine/motion/camera";
+import { kf } from "../../engine/motion/keyframes";
+import { drift, DRIFT_PERIODS, ease, progress } from "../../engine/motion/easing";
+import { layoutFor } from "../../engine/layout";
+import { CopyBand, Signature } from "../_shared";
+import type { TemplateDefinition, TemplateInput } from "../../engine/types";
+
+const T = { swoopEnd: 150, headline: 120, pullStart: 226, pullEnd: 256, copyLeave: 238, endCard: 256 };
+
+/**
+ * The phone lies on a surface, seen low and from the side, screen dark.
+ * The camera swoops down and around while the phone lifts and rights
+ * itself, until the screen is flat to the lens and nearly fills the
+ * frame. One continuous move, all of it easing.
+ */
+const Component: React.FC<TemplateInput> = ({ screens, logo, brand, copy, cta }) => {
+  const frame = useCurrentFrame();
+  const { width, height, fps } = useVideoConfig();
+  const L = layoutFor(width, height);
+  const t = frame / fps;
+  const wide = L.aspect === "16:9";
+
+  const phoneWidth = Math.min(L.device.height * (wide ? 0.42 : 0.37), L.device.width * (wide ? 0.4 : 0.46));
+  const g = iphoneGeometry(phoneWidth);
+  const centreX = L.device.x + L.device.width / 2 - width / 2;
+  const centreY = L.device.y + L.device.height / 2 - height / 2;
+
+  // The phone: lying back, rotated, low; lifting and squaring up.
+  const pitch = kf(frame, [{ at: 0, value: -70 }, { at: T.swoopEnd, value: 0, easing: ease.cinematicInOut }]);
+  const yaw = kf(frame, [{ at: 0, value: 34 }, { at: T.swoopEnd, value: -8, easing: ease.cinematicInOut }, { at: T.pullEnd, value: 0, easing: ease.smooth }]);
+  const roll = kf(frame, [{ at: 0, value: -22 }, { at: T.swoopEnd, value: 0, easing: ease.cinematicInOut }]);
+  const lift = kf(frame, [{ at: 0, value: g.height * 0.35 }, { at: T.swoopEnd, value: 0, easing: ease.cinematicInOut }]);
+  const brightness = kf(frame, [{ at: 30, value: 0 }, { at: 100, value: 1, easing: ease.cinematicOut }]);
+
+  const near = wide ? 1.3 : 1.16;
+  const move = cameraAt(frame, [
+    { at: 0, dolly: 0.8, orbitX: 24, orbitY: -18, y: L.unit * 0.05 },
+    { at: T.swoopEnd, dolly: near, orbitX: 0, orbitY: 0, y: 0, easing: ease.cinematicInOut },
+    { at: T.pullStart, dolly: near },
+    { at: T.pullEnd, dolly: 1.02, orbitX: 6, easing: ease.cinematicInOut },
+  ]);
+  const settled = ease.cinematicOut(progress(frame, T.swoopEnd, T.swoopEnd + 30));
+  const camera = addCamera(move, {
+    orbitY: drift(t, DRIFT_PERIODS.slow, 0.8) * settled,
+    y: drift(t, DRIFT_PERIODS.breath, L.unit * 0.004, 1) * settled,
+  });
+
+  const exposure = ease.cinematicOut(progress(frame, 0, 20));
+  const endDim = ease.cinematicIn(progress(frame, T.endCard, T.endCard + 20));
+
+  return (
+    <AbsoluteFill style={{ backgroundColor: "#000" }}>
+      <Environment primary={brand.primary} accent={brand.accent} exposure={exposure * (1 - endDim * 0.6)} keyLight={{ x: 0.25, y: 0.2 }} dust />
+      <Stage camera={camera} origin={{ x: 0.5, y: 0.5 }}>
+        <Placed x={centreX} y={centreY} width={0} height={0}>
+          <Surface y={g.height * 0.62} size={L.unit * 12} color={brand.primary} focus={0.4} opacity={exposure * (1 - settled * 0.6)} />
+          <ContactShadow width={g.width * 1.3} depth={g.height * 0.9} y={g.height * 0.61} strength={0.7 * (1 - settled * 0.5)} softness={40} />
+          <IPhone
+            width={phoneWidth}
+            brightness={brightness}
+            sheenAngle={110 + yaw}
+            transform={`translateY(${-lift}px) rotateX(${pitch}deg) rotateY(${yaw}deg) rotateZ(${roll}deg)`}
+            screen={(dims) => (
+              <ScreenSequence screens={screens} width={dims.width} height={dims.height} from={60} to={T.endCard + 10} hold={Math.round(fps * 2)} transition="crossfade" transitionFrames={14} scrollAmount={0.7} dim={endDim * 0.7} />
+            )}
+          />
+        </Placed>
+      </Stage>
+      <CopyBand layout={L} copy={copy} brand={brand} from={T.headline} leave={T.copyLeave} />
+      <Signature layout={L} logo={logo} from={40} leave={T.endCard} />
+      <EndCard from={T.endCard} cta={cta} brand={brand} logo={logo} badges="app" />
+    </AbsoluteFill>
+  );
+};
+
+export const template: TemplateDefinition = {
+  id: "iphone-perspective",
+  name: "iPhone — Perspective Swoop",
+  tagline: "Lying on a surface, seen low from the side; one continuous swoop until the screen is flat to the lens.",
+  category: "phone",
+  devices: ["iphone"],
+  durationInFrames: 300,
+  aspects: ["9:16", "1:1", "16:9"],
+  slots: { screens: { min: 1, max: 5, surface: "mobile" }, logo: "optional", headline: true, subline: true, cta: true, accent: true, duration: null },
+  component: Component,
+};

@@ -13,7 +13,7 @@ import { addCamera, cameraAt } from "../../engine/motion/camera";
 import { kf } from "../../engine/motion/keyframes";
 import { drift, DRIFT_PERIODS, ease, progress } from "../../engine/motion/easing";
 import { layoutFor } from "../../engine/layout";
-import { darken, rgba } from "../../engine/palette";
+import { rgba } from "../../engine/palette";
 import type { TemplateDefinition, TemplateInput } from "../../engine/types";
 
 const DURATION = 300;
@@ -100,7 +100,7 @@ const Component: React.FC<TemplateInput> = ({ screens, logo, brand, copy, cta })
 
       <Stage camera={camera} origin={{ x: 0.5, y: 0.45 }}>
         <Placed x={hingeX} y={hingeY} width={0} height={0}>
-          <Surface y={g.deckThickness + 3} size={L.unit * 14} color={darken(brand.primary, 0.62)} focus={0.48} opacity={exposure} />
+          <Surface y={g.deckThickness + 3} size={L.unit * 14} color={brand.primary} focus={0.48} opacity={exposure} />
           <ContactShadow width={g.width} depth={g.deckDepth} y={g.deckThickness + 2} z={g.deckDepth / 2} strength={0.8} softness={30} />
           <ScreenSpill width={g.width} depth={g.deckDepth} y={g.deckThickness + 2} z={g.deckDepth * 0.9} color={rgba(brand.accent, 0.5)} intensity={brightness * 0.7} />
           <MacBook

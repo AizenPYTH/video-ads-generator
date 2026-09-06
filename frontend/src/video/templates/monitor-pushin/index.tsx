@@ -14,7 +14,7 @@ import { addCamera, cameraAt } from "../../engine/motion/camera";
 import { kf } from "../../engine/motion/keyframes";
 import { drift, DRIFT_PERIODS, ease, progress } from "../../engine/motion/easing";
 import { layoutFor } from "../../engine/layout";
-import { darken, rgba } from "../../engine/palette";
+import { rgba } from "../../engine/palette";
 import type { TemplateDefinition, TemplateInput } from "../../engine/types";
 
 const DURATION = 300;
@@ -76,7 +76,7 @@ const Component: React.FC<TemplateInput> = ({ screens, logo, brand, copy, cta })
 
       <Stage camera={camera} origin={{ x: 0.5, y: 0.42 }}>
         <Placed x={centreX} y={centreY} width={0} height={0}>
-          <Surface y={floorY} size={L.unit * 14} color={darken(brand.primary, 0.6)} focus={0.46} opacity={exposure} />
+          <Surface y={floorY} size={L.unit * 14} color={brand.primary} focus={0.46} opacity={exposure} />
           <ContactShadow width={g.footWidth * 2.4} depth={g.footDepth * 2.2} y={floorY - 1} z={-g.thickness} strength={0.75} softness={36} />
           <ScreenSpill width={g.width} depth={g.width * 0.6} y={floorY - 1} z={g.width * 0.22} color={rgba(brand.accent, 0.45)} intensity={brightness * 0.6} />
           <Monitor

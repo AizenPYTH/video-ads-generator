@@ -1,0 +1,117 @@
+import React from "react";
+import { AbsoluteFill, useCurrentFrame, useVideoConfig } from "remotion";
+import { Environment } from "../../engine/scene/Environment";
+import { Stage, Placed } from "../../engine/scene/Stage";
+import { IPhone, iphoneGeometry } from "../../engine/devices/IPhone";
+import { ScreenSequence } from "../../engine/content/ScreenSequence";
+import { EndCard } from "../../engine/content/EndCard";
+import { addCamera, cameraAt } from "../../engine/motion/camera";
+import { drift, DRIFT_PERIODS, ease, progress } from "../../engine/motion/easing";
+import { layoutFor } from "../../engine/layout";
+import { rgba } from "../../engine/palette";
+import { CopyBand, Signature } from "../_shared";
+import type { TemplateDefinition, TemplateInput } from "../../engine/types";
+
+const T = { headline: 70, copyLeave: 238, endCard: 256 };
+
+/**
+ * A phone in the air, in a moody room, tumbling slowly - a long yaw that
+ * shows both faces, dust catching the rim light, its own reflection
+ * underneath. Nothing happens fast. The screens change on the beat of
+ * the tumble.
+ */
+const Component: React.FC<TemplateInput> = ({ screens, logo, brand, copy, cta }) => {
+  const frame = useCurrentFrame();
+  const { width, height, fps } = useVideoConfig();
+  const L = layoutFor(width, height);
+  const t = frame / fps;
+  const wide = L.aspect === "16:9";
+
+  const phoneWidth = Math.min(L.device.height * (wide ? 0.4 : 0.37), L.device.width * (wide ? 0.38 : 0.44));
+  const g = iphoneGeometry(phoneWidth);
+  const centreX = L.device.x + L.device.width / 2 - width / 2;
+  const centreY = L.device.y + L.device.height * 0.46 - height / 2;
+
+  const enter = ease.cinematicOut(progress(frame, 0, 40));
+  // Slow yaw sweep, -34..34 over ~8s, plus tilt and bob on other periods.
+  const yaw = Math.sin(((t + 2) * Math.PI * 2) / 8.5) * 34;
+  const pitch = drift(t, DRIFT_PERIODS.slow, 7, 1);
+  const roll = drift(t, DRIFT_PERIODS.medium, 4, 5);
+  const bob = drift(t, DRIFT_PERIODS.breath, L.unit * 0.014, 0);
+  // Facing: 1 when square to the camera, 0 edge-on. The screen's presence follows it.
+  const facing = Math.cos((yaw * Math.PI) / 180);
+
+  const move = cameraAt(frame, [
+    { at: 0, dolly: 0.94, orbitX: 3 },
+    { at: 250, dolly: 1.08, orbitX: 1, easing: ease.smooth },
+    { at: 290, dolly: 1.02, easing: ease.smooth },
+  ]);
+  const camera = addCamera(move, { orbitY: drift(t, DRIFT_PERIODS.slow, 0.8, 3) });
+
+  const exposure = ease.cinematicOut(progress(frame, 0, 26));
+  const endDim = ease.cinematicIn(progress(frame, T.endCard, T.endCard + 20));
+
+  const phone = (
+    <IPhone
+      width={phoneWidth}
+      brightness={enter * (0.35 + 0.65 * Math.max(0, facing))}
+      sheenAngle={112 + yaw}
+      transform={`rotateY(${yaw}deg) rotateX(${pitch}deg) rotateZ(${roll}deg)`}
+      screen={(dims) => (
+        <ScreenSequence screens={screens} width={dims.width} height={dims.height} from={10} to={T.endCard + 10} hold={Math.round(fps * 2.1)} transition="crossfade" transitionFrames={18} scrollAmount={0.5} driftZoom={1.02} dim={endDim * 0.7} />
+      )}
+    />
+  );
+
+  return (
+    <AbsoluteFill style={{ backgroundColor: "#000" }}>
+      <Environment primary={brand.primary} accent={brand.accent} exposure={exposure * 0.8 * (1 - endDim * 0.6)} keyLight={{ x: 0.75, y: 0.1 }} dust />
+      <Stage camera={camera} origin={{ x: 0.5, y: 0.5 }}>
+        <Placed x={centreX} y={centreY + bob} width={0} height={0}>
+          {/* Rim glow behind */}
+          <Placed x={0} y={0} z={-g.width} width={g.width * 2.6} height={g.height * 1.6}>
+            <div style={{ position: "absolute", inset: 0, borderRadius: "50%", background: `radial-gradient(ellipse at center, ${rgba(brand.accent, 0.42)} 0%, transparent 62%)`, filter: "blur(60px)", opacity: enter }} />
+          </Placed>
+          <div style={{ position: "absolute", transformStyle: "preserve-3d", transform: `translateY(${(1 - enter) * L.unit * 0.12}px)`, opacity: enter }}>
+            {phone}
+          </div>
+          {/* Reflection: the same phone, mirrored under itself, blurred and
+              fading to nothing. A mask flattens 3D, so the mirrored copy is
+              a flat render of the phone - which is what a reflection in a
+              dark floor is. */}
+          <Placed x={0} y={g.height * 1.12 + (1 - enter) * L.unit * 0.12} width={g.width * 3} height={g.height * 1.4} style={{ transformStyle: "flat" }}>
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                opacity: enter * 0.3,
+                filter: "blur(6px)",
+                maskImage: "linear-gradient(to bottom, rgba(0,0,0,0.85) 0%, transparent 55%)",
+                WebkitMaskImage: "linear-gradient(to bottom, rgba(0,0,0,0.85) 0%, transparent 55%)",
+              }}
+            >
+              <div style={{ position: "absolute", left: "50%", top: g.height * 0.7, transformStyle: "preserve-3d", transform: "scaleY(-1)" }}>
+                {phone}
+              </div>
+            </div>
+          </Placed>
+        </Placed>
+      </Stage>
+      <CopyBand layout={L} copy={copy} brand={brand} from={T.headline} leave={T.copyLeave} />
+      <Signature layout={L} logo={logo} from={30} leave={T.endCard} />
+      <EndCard from={T.endCard} cta={cta} brand={brand} logo={logo} badges="app" />
+    </AbsoluteFill>
+  );
+};
+
+export const template: TemplateDefinition = {
+  id: "phone-float",
+  name: "Phone — Floating",
+  tagline: "In the air, in a moody room, tumbling slowly over its own reflection. Nothing happens fast.",
+  category: "phone",
+  devices: ["iphone"],
+  durationInFrames: 300,
+  aspects: ["9:16", "1:1", "16:9"],
+  slots: { screens: { min: 1, max: 4, surface: "mobile" }, logo: "optional", headline: true, subline: true, cta: true, accent: true, duration: null },
+  component: Component,
+};

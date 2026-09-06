@@ -44,7 +44,7 @@ const Component: React.FC<TemplateInput> = ({ screens, logo, brand, copy, cta })
   const t = frame / fps;
 
   const wide = L.aspect === "16:9";
-  const phoneWidth = Math.min(L.device.height * 0.44, L.device.width * (wide ? 0.42 : 0.5));
+  const phoneWidth = Math.min(L.device.height * (wide ? 0.44 : 0.4), L.device.width * (wide ? 0.42 : 0.48));
   const g = iphoneGeometry(phoneWidth);
   const centreX = L.device.x + L.device.width / 2 - width / 2;
   const centreY = L.device.y + L.device.height / 2 - height / 2;
