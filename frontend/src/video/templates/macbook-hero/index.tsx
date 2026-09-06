@@ -86,7 +86,7 @@ const Scene: React.FC<{ input: TemplateInput; endDim: number }> = ({ input, endD
   const screen = useScreenTexture(
     laptopScreenShape(quality.screenTexture, MACBOOK_MM.screenAspect),
     { screens: input.screens, from: T.lidStart + 30, to: T.endCard + 10, hold: T.swap - T.lidStart - 30, transitionFrames: 18, scrollAmount: 0.8, driftZoom: 1.02 },
-    { dim: endDim * 0.75 },
+    { dim: endDim * 0.75, flipY: true },
   );
 
   return (

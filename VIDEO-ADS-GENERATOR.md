@@ -238,6 +238,11 @@ One Remotion composition is registered per template per aspect
 (`<id>--<aspect>`, e.g. `macbook-open--9x16`). The backend renders one
 native composition per requested format; nothing is cropped from a master.
 
+When a render fails, the job carries a sentence a person can act on (a
+screenshot that never loaded, a renderer that ran out of memory, a full
+disk) — see `backend/src/jobs/renderFailure.ts` — and the full error goes
+to the log.
+
 ### Adding a template
 
 1. Create `backend/remotion/src/templates/<id>/index.tsx` exporting
@@ -370,3 +375,12 @@ half is the future "write me an ad automatically" feature, not the product.
   wrong app. Matches show icon and publisher for that reason, and the field
   stays editable.
 - No audio.
+- Only the iPhone comes from a scanned model. The MacBook is built in code
+  (body, hinge, display, screen) with the real proportions and a real hinge,
+  but no source GLB, so it lacks the fine detail of the phone.
+- No depth of field. The camera has position, target, FOV, roll and pan;
+  a focus pass was left out on purpose because it doubles render time under
+  software GL for a subtle gain.
+- Without a GPU the 3D templates render in software (SwiftShader/ANGLE):
+  about 40 s per second of video per format at 720p on one core. A GPU
+  or more cores brings that down roughly linearly.

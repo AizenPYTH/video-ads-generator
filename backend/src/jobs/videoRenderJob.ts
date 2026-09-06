@@ -4,6 +4,7 @@ import { renderTemplate } from "../services/remotion.service";
 import { logger } from "../utils/logger";
 import { clamp, nowIso } from "../utils/helpers";
 import type { GenerationRequest, JobStatus } from "../types";
+import { describeRenderFailure } from "./renderFailure";
 
 export interface RenderJobPayload {
   jobId: string;
@@ -64,12 +65,12 @@ export function startVideoWorker(): void {
       });
       logger.info({ jobId }, "render job completed");
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      // The person gets a sentence they can act on; the log gets everything.
       logger.error({ jobId, error }, "render job failed");
       await jobStore.update(jobId, {
         status: "failed",
         message: "Generation failed",
-        error: message,
+        error: describeRenderFailure(error),
         completedAt: nowIso(),
       });
     }

@@ -113,14 +113,16 @@ export function screenStateAt(frame: number, spec: ScreenSequenceSpec): {
  *
  * The screen mesh's UVs run 0..1 across the glass, so a canvas the shape
  * of the glass lands exactly on it: no calibration, and it stays put
- * through any rotation because it *is* the surface. `flipY` is off to
- * match glTF's top-down UV convention.
+ * through any rotation because it *is* the surface. `flipY` is off by
+ * default to match glTF's top-down UV convention; a procedural
+ * `planeGeometry` runs bottom-up and asks for `flipY: true`.
  */
 export function useScreenTexture(
   shape: ScreenShape,
   spec: ScreenSequenceSpec,
-  options: { dim?: number; off?: boolean } = {},
+  options: { dim?: number; off?: boolean; flipY?: boolean } = {},
 ): CanvasTexture {
+  const flipY = options.flipY ?? false;
   const frame = useCurrentFrame();
   const { images, release } = useImages(spec.screens);
   const advance = useThree((state) => state.advance);
@@ -139,13 +141,13 @@ export function useScreenTexture(
   const texture = useMemo(() => {
     const t = new CanvasTexture(canvas);
     t.colorSpace = SRGBColorSpace;
-    t.flipY = false;
+    t.flipY = flipY;
     t.anisotropy = 8;
     t.minFilter = LinearFilter;
     t.magFilter = LinearFilter;
     t.generateMipmaps = false;
     return t;
-  }, [canvas]);
+  }, [canvas, flipY]);
 
   useEffect(() => () => texture.dispose(), [texture]);
 
