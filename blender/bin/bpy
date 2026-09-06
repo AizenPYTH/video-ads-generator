@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Runs a Python script inside Blender (the bpy module), headless.
+#   blender/bin/bpy script.py [-- script args]
+# Cycles is registered on start; scripts get bpy with a factory scene.
+VENV="${BLENDER_VENV:-/opt/blender-venv}"
+if [ ! -x "$VENV/bin/python" ]; then
+  echo "bpy is not installed; run blender/setup.sh first" >&2
+  exit 1
+fi
+exec "$VENV/bin/python" "$@"
