@@ -84,3 +84,5 @@ Thumbs.db
 
 # Blender renders
 blender/out/
+blender/**/__pycache__/
+blender/**/*.blend1
