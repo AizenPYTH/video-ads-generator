@@ -76,10 +76,12 @@ GALLERY ──► pick a template ──► EDITOR ──► website / App Store
 
 A template is a finished shot: camera, device, light, timing, easing,
 transitions — all authored, frame-deterministic, nothing decided by a model
-at render time. Ten ship:
+at render time. Two run on the WebGL engine, ten on the CSS-3D one:
 
 | Id | Shot |
 | --- | --- |
+| `iphone-hero` | **3D.** A real phone on a bright studio set. Settle, a quarter orbit, a slow dolly, one screen swap, a pull-out for the mark and the link. Nothing spins. |
+| `macbook-hero` | **3D.** A shut laptop on a bright desk, filmed from above. The lid opens on its hinge as the camera comes down to meet it; a push into the site; a pull-out. |
 | `macbook-open` | Shut on a dark desk. The lid opens toward a descending camera, the screen lights the deck, the shot pushes in, pulls back for the sign-off. |
 | `iphone-rise` | Rises from below, back to camera, and turns to face you. Floats. Squares up for the store card. |
 | `macbook-orbit` | The camera walks a third of the way around an open laptop, then commits to the screen. |
@@ -118,10 +120,10 @@ server render, so what you see in the editor is the output.
 ### The live preview
 
 The editor plays the template through `@remotion/player` with whatever is
-in it right now. Reorder screens, drop a logo, type a headline: the phone
-updates without a round trip. The gallery plays each card the same way,
-with an empty device — one frame until the card is hovered or in view,
-because ten players at 30 fps is a fan.
+in it right now — for the 3D templates that is a live WebGL scene, one per
+page. Reorder screens, drop a logo, type a headline: the phone updates
+without a round trip. The gallery never mounts a scene: each card is a
+pre-rendered poster that plays a pre-rendered loop on hover.
 
 ### Where the screens come from
 
@@ -169,17 +171,68 @@ internal address is the one shape that must never reach it.
 ## Rendering
 
 `backend/remotion/src/` is a self-contained module — it imports nothing
-outside itself but `remotion` and `react`, no `process.env`, no `node:*` —
-so it runs in the renderer and in the browser alike.
+outside itself but `remotion`, `react` and the Three.js stack, no
+`process.env`, no `node:*` — so it runs in the renderer and in the browser
+alike.
 
 ```
-engine/
-  motion/     easing curves, keyframes, a 3D camera (dolly as real Z, so layers parallax)
-  scene/      Stage (perspective + camera), Environment (lights, dust, grain), Floor
-  devices/    MacBook (hinged lid), IPhone (body slices, a back), Monitor
-  content/    Screen (fit + scroll), ScreenSequence (transitions), Logo, Copy, EndCard
+engine3d/     the WebGL engine (Three.js + React Three Fiber + @remotion/three)
+  scene/      Scene3D: the canvas synced to the Remotion frame; two quality levels
+  camera/     Camera3D state (distance, yaw, pitch, fov, target, pan, roll) + CameraRig
+  lighting/   LightingRig: five soft boxes baked into an environment map, a shadow
+              light, a floor fogged into the backdrop, a backdrop wall
+  devices/    IPhone3D (the GLB, its real display mesh), MacBook3D (body > hinge >
+              display > screen, lid rotates on the hinge), Device dispatcher
+  screen/     ScreenSurface: screenshots painted into a canvas texture on the
+              real display mesh; fit, scroll, crossfade, bezel, Dynamic Island
+engine/       the CSS-3D engine the earlier templates use, and the shared pieces
+              (easing, keyframes, layout per aspect, copy, end card, placeholders)
 templates/    one folder per template; templates/index.ts is the library
+scenes/       reference scenes for judging motion, not in the library
 ```
+
+### The 3D assets
+
+The source model — `iphone_15_pro.glb` at the repo root, 4.7 MB from
+Sketchfab — is never loaded by a browser. `backend/scripts/prepare-devices.mjs`
+turns it into the 612 KB runtime asset at `backend/remotion/public/models/`
+(copied to `frontend/public/models/`): it splits the front face of the outer
+glass into a `Screen` mesh with planar UVs so a canvas texture lands on the
+display exactly, names the parts, sets sane PBR values, converts textures to
+WebP and quantizes the geometry.
+
+```bash
+cd backend && npm run assets:prepare     # after changing the source model
+```
+
+No MacBook source exists in the repo. `MacBook3D` is modelled at real
+dimensions with the hierarchy a rigged asset would have, so swapping in a GLB
+later replaces geometry, not animation.
+
+### Determinism
+
+Everything is a function of `useCurrentFrame()`: camera, device pose, lid
+angle, which screenshot is on the screen. No `Date.now()`, no unseeded
+random, no accumulation between frames. Remotion renders with a manual frame
+loop; three things had to meet it and are commented where they live — a
+canvas texture must be created at its final size (WebGL2 storage is
+immutable after first upload), asynchronous arrivals (the model, the
+screenshots) request a frame and only then release the render delay, and
+the environment map bakes every frame rather than once.
+
+### Gallery previews
+
+The gallery mounts no WebGL. Each card shows a poster and plays a 540p loop
+on hover or when in view, both pre-rendered:
+
+```bash
+cd backend && npm run previews:render            # all templates
+cd backend && npm run previews:render iphone-hero # one
+```
+
+Output goes to `frontend/public/previews/<id>.jpg|mp4` and is committed. The
+editor mounts exactly one scene, inside an error boundary that explains a
+missing WebGL context or a model that failed to load in plain words.
 
 One Remotion composition is registered per template per aspect
 (`<id>--<aspect>`, e.g. `macbook-open--9x16`). The backend renders one

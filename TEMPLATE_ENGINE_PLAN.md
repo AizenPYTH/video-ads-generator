@@ -1,5 +1,15 @@
 # Template Engine — plan d'architecture
 
+> **Mise à jour — moteur 3D.** Depuis la refonte Three.js, les appareils sont
+> de vrais modèles WebGL (`engine3d/`) : l'iPhone vient du GLB source préparé
+> par `backend/scripts/prepare-devices.mjs`, le MacBook est modélisé avec une
+> vraie hiérarchie charnière. Les templates `iphone-hero` et `macbook-hero`
+> tournent dessus ; les dix templates précédents restent sur le moteur CSS 3D
+> (`engine/`). La galerie n'affiche que des previews pré-rendues (poster +
+> boucle MP4) ; l'éditeur monte une seule scène. Le reste de ce document
+> décrit l'architecture commune (slots, contrat `TemplateInput`, miroir
+> frontend, rendu par format), qui n'a pas changé.
+
 Refonte du produit : d'un générateur « URL → IA → vidéo » vers un **studio de
 publicités motion design à base de templates premium**. L'utilisateur choisit
 d'abord une animation, puis y injecte son produit.
