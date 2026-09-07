@@ -65,12 +65,12 @@ Submit from a machine with normal internet access:
 
 The local reference renders of the same five frames, same settings, are in
 `blender/out/farm-test/local_reference/` (CPU, four cores; times in
-`/tmp/farm-local.log` when produced in this environment).
+`local_reference/times.json`).
 
 ```bash
 ./blender/bin/bpy blender/templates/iphone_cinematic_hero/compare_farm.py \
   --farm blender/out/farm-test/farm \
-  --farm-times '{"37": 4.1, "61": 3.9, "106": 5.2, "139": 5.0, "250": 4.4}'
+  --local-times blender/out/farm-test/local_reference/times.json --farm-times '{"37": 4.1, "61": 3.9, "106": 5.2, "139": 5.0, "250": 4.4}'
 ```
 
 The report gives, per frame, local and farm seconds, Laplacian-variance
